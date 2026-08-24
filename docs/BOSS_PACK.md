@@ -30,7 +30,7 @@ Same prompts and Layer A quantization for fair comparison. LLM jobs use tensor-p
 
 | Tier | Machine | Indicative price | Best for |
 |------|---------|------------------|----------|
-| **1** | DGX Spark / GX10 (128 GB unified) | A$6k–9k | Low power, large model **fit**; slower media |
+| **1** | DGX Spark / GX10 (128 GB unified) | A$6.5k–11k | Low power, large model **fit**; slower media |
 | **1b** | RTX 5090 workstation (32 GB) | A$10k–13k | Fast desk AI; tight on largest video models |
 | **2** | 1× RTX PRO 6000 (96 GB ECC) | A$26k–33k | **Business workstation** — media + Qwen native |
 | **3** | 2× RTX PRO 6000 (192 GB) | A$50k–70k | **DeepSeek native** + headroom |
