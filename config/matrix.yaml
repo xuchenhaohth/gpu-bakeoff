@@ -11,7 +11,7 @@ skus:
     arch: aarch64
     compute_cap: "121"
     memory_type: unified
-    image: null  # filled by 01_search_offers.py from offer metadata
+    image: vastai/pytorch:@vastai-automatic-tag
 
   rtx5090_1x:
     label: bakeoff-5090

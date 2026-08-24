@@ -2,7 +2,7 @@
 
 | Component | Target | x86 (5090 / PRO 6000) | ARM (GB10 Spark) |
 |-----------|--------|-------------------------|------------------|
-| Base image | Vast template | `vastai/pytorch:@vastai-automatic-tag` | From offer metadata (`offers.yaml`) |
+| Base image | Vast template | `vastai/pytorch:@vastai-automatic-tag` | `vastai/pytorch:@vastai-automatic-tag` |
 | CUDA | Blackwell | ≥ 12.8 | ≥ 12.8 |
 | PyTorch | From base image | sm_120 | sm_121 |
 | ComfyUI | git HEAD @ run date | `/workspace/ComfyUI` via `install_stack.sh` | ARM build if available |

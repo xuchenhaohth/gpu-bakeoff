@@ -10,18 +10,13 @@ from lib.sku_offers import validate_offer
 from lib.vast import vastai
 
 DISK_GB = int(os.environ.get("DISK_GB", "400"))
+DEFAULT_IMAGE = "vastai/pytorch:@vastai-automatic-tag"
 
 
 def resolve_image(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> str:
-    arch = sku_meta.get("arch") or offer.get("cpu_arch") or "x86_64"
     image = sku_meta.get("image") or offer.get("image")
     if not image:
-        if arch == "aarch64":
-            raise SystemExit(
-                f"No container image for aarch64 SKU {sku_id} — "
-                "re-run 01_search_offers.py or set image in matrix.yaml"
-            )
-        image = "vastai/pytorch:@vastai-automatic-tag"
+        image = DEFAULT_IMAGE
     return image
 
 
@@ -58,6 +53,7 @@ def launch_one(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> 
         label,
         "--env",
         env_str,
+        check=False,
     )
     if isinstance(result, dict) and result.get("success"):
         iid = result.get("new_contract") or result.get("id")

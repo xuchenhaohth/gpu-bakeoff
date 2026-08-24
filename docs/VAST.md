@@ -73,7 +73,7 @@ vastai copy local:./scripts/remote/ <INSTANCE_ID>:/workspace/bakeoff/
 | Arch | Image |
 |------|-------|
 | x86_64 (5090, PRO 6000) | `vastai/pytorch:@vastai-automatic-tag` |
-| aarch64 (GB10 Spark) | From offer `image` field captured by `01_search_offers.py` — launch fails fast if missing |
+| aarch64 (GB10 Spark) | `vastai/pytorch:@vastai-automatic-tag` (Vast resolves ARM64/Grace server-side) |
 
 ## GB10 / Spark search
 
