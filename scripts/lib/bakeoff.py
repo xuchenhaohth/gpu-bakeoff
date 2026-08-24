@@ -26,6 +26,11 @@ def spend_check(offers: dict[str, Any]) -> None:
     min_credit = float(os.environ.get("MIN_CREDIT_USD", "50"))
     user = vastai("show", "user")
     credit = float(user.get("credit") or user.get("balance") or 0)
+    if credit <= 0:
+        raise SystemExit(
+            f"Insufficient credit (${credit:.2f}). "
+            "Add funds at https://cloud.vast.ai/billing/"
+        )
     if credit < min_credit:
         raise SystemExit(f"Insufficient credit ${credit:.2f} < MIN_CREDIT_USD={min_credit}")
 

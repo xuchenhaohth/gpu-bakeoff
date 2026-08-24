@@ -69,7 +69,14 @@ def launch_one(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> 
             "reliability": offer.get("reliability"),
             "status": "created",
         }
-    print(f"  FAILED: {result}")
+    if isinstance(result, dict):
+        msg = result.get("msg") or result.get("message")
+        if msg:
+            print(f"  FAILED: {msg}")
+        else:
+            print(f"  FAILED: {result}")
+    else:
+        print(f"  FAILED: {result or 'no response from vastai'}")
     return None
 
 

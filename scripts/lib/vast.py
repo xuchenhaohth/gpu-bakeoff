@@ -37,20 +37,38 @@ def _vastai_cmd(*args: str, raw: bool = True) -> list[str]:
 
 def vastai(*args: str, check: bool = True) -> Any:
     proc = subprocess.run(_vastai_cmd(*args), capture_output=True, text=True)
+    stdout = proc.stdout.strip()
+    stderr = proc.stderr.strip()
+    payload = stdout or stderr
+
     if proc.returncode != 0:
         if check:
             raise RuntimeError(
                 f"vastai failed ({proc.returncode}): {' '.join(args)}\n"
-                f"stderr: {proc.stderr}\nstdout: {proc.stdout}"
+                f"stderr: {stderr}\nstdout: {stdout}"
             )
+        if payload:
+            try:
+                return json.loads(payload)
+            except json.JSONDecodeError:
+                return {"success": False, "msg": payload}
         return None
-    out = proc.stdout.strip()
-    if not out:
+
+    if not payload:
         return None
     try:
-        return json.loads(out)
+        result = json.loads(payload)
     except json.JSONDecodeError:
-        return out
+        return payload
+
+    if isinstance(result, dict) and result.get("error"):
+        if check:
+            raise RuntimeError(
+                f"vastai API error: {' '.join(args)}\n"
+                f"response: {payload}"
+            )
+        return result
+    return result
 
 
 def vastai_copy(src: str, dst: str, check: bool = True) -> None:
