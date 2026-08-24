@@ -34,17 +34,128 @@ def parse_instance_status(inst: dict[str, Any]) -> str | None:
     return None
 
 
-def instance_status(instance_id: int) -> str | None:
+def fetch_instance(instance_id: int) -> dict[str, Any]:
     raw = vastai("show", "instance", str(instance_id))
     rows = normalize_vast_list(raw)
-    return parse_instance_status(rows[0] if rows else {})
+    return rows[0] if rows else {}
+
+
+def instance_status(instance_id: int) -> str | None:
+    return parse_instance_status(fetch_instance(instance_id))
+
+
+def _format_duration(seconds: float) -> str:
+    total = max(0, int(seconds))
+    if total < 60:
+        return f"{total}s"
+    minutes, secs = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes}m{secs}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes}m"
+
+
+def _truncate_msg(msg: str, max_len: int = 160) -> str:
+    collapsed = " ".join(msg.split())
+    if len(collapsed) <= max_len:
+        return collapsed
+    return collapsed[: max_len - 3] + "..."
+
+
+def _instance_image(inst: dict[str, Any]) -> str | None:
+    for key in ("image", "image_uuid", "image_args"):
+        value = inst.get(key)
+        if value:
+            return str(value)
+    return None
+
+
+def host_snapshot_key(inst: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        inst.get("gpu_name"),
+        inst.get("geolocation"),
+        inst.get("reliability"),
+        inst.get("inet_down"),
+        _instance_image(inst),
+    )
+
+
+def format_host_snapshot(inst: dict[str, Any]) -> str:
+    parts: list[str] = []
+    gpu = inst.get("gpu_name")
+    if gpu:
+        parts.append(str(gpu))
+    geo = inst.get("geolocation")
+    if geo:
+        parts.append(str(geo))
+    rel = inst.get("reliability")
+    if rel is not None:
+        parts.append(f"reliability={rel}")
+    inet = inst.get("inet_down")
+    if inet is not None:
+        parts.append(f"inet_down={inet}Mbps")
+    image = _instance_image(inst)
+    if image:
+        parts.append(f"image={image}")
+    if not parts:
+        return ""
+    return "  host: " + "  ".join(parts)
+
+
+def format_wait_line(
+    instance_id: int,
+    inst: dict[str, Any],
+    deadline: float,
+    now: float | None = None,
+) -> str:
+    now = now or time.time()
+    status = parse_instance_status(inst)
+    parts = [f"instance {instance_id}:", status_display(status)]
+
+    start = inst.get("start_date")
+    if start is not None:
+        try:
+            elapsed = now - float(start)
+            parts.append(_format_duration(elapsed))
+        except (TypeError, ValueError):
+            pass
+
+    remaining = deadline - now
+    if remaining > 0:
+        parts.append(f"{_format_duration(remaining)} left")
+
+    intended = inst.get("intended_status")
+    if intended and intended != status and status is not None:
+        parts.append(f"intended={intended}")
+
+    cur_state = inst.get("cur_state")
+    if cur_state and cur_state != status:
+        parts.append(f"cur_state={cur_state}")
+
+    status_msg = inst.get("status_msg")
+    if status_msg:
+        parts.append(f'msg="{_truncate_msg(str(status_msg))}"')
+
+    return "  " + "  ".join(parts)
 
 
 def wait_instance(instance_id: int) -> str:
     deadline = time.time() + TIMEOUT
+    last_host_key: tuple[Any, ...] | None = None
     while time.time() < deadline:
-        status = instance_status(instance_id)
-        print(f"  instance {instance_id}: {status_display(status)}")
+        now = time.time()
+        inst = fetch_instance(instance_id)
+        status = parse_instance_status(inst)
+
+        host_key = host_snapshot_key(inst)
+        if host_key != last_host_key:
+            snapshot = format_host_snapshot(inst)
+            if snapshot:
+                print(snapshot)
+            last_host_key = host_key
+
+        print(format_wait_line(instance_id, inst, deadline, now))
+
         if status == "running":
             return "running"
         if status is not None and status in FAIL_STATUSES:

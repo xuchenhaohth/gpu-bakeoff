@@ -117,6 +117,7 @@ If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 |---------|-----|
 | `401 Unauthorized` | Re-run `vastai set api-key` |
 | `Insufficient credits` | Top up billing |
+| Repeated `loading` during wait | Normal image pull / container start — watch `status_msg` and elapsed time in wait log; timeout is `WAIT_TIMEOUT_SEC` (25 min) then backup offer |
 | SSH timeout | Wait longer or destroy and pick higher `reliability` offer |
 | CUDA / sm_120 errors | Wrong image or driver on host — next candidate |
 | OOM on Hunyuan | Check **host RAM** in CSV, not just VRAM |
