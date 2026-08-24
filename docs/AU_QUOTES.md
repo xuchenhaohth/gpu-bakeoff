@@ -2,7 +2,7 @@
 
 > **Re-quote live** before the boss pack goes out. Prices inc GST unless noted. Stock changes daily.
 
-Last verified: 2026-08-25. **Verify at retailer checkout.**
+Last verified: 2026-08-25. **Verify at retailer checkout.** Every table price was checked against the linked product page (not search snippets or aggregators).
 
 ## Tier 1 — desk / low power
 
@@ -10,14 +10,14 @@ Last verified: 2026-08-25. **Verify at retailer checkout.**
 
 | Retailer | Product | Price (inc GST) | Warranty |
 |----------|---------|-----------------|----------|
-| Mwave | ASUS Ascent GX10 1TB (GX10-GG0013BN) | A$6,999 ([listing](https://www.mwave.com.au/product/asus-ascent-gx10-ai-nvdia-gb10-128gb-ram-1tb-supercomputer-mini-pc-nvidia-dgx-os-ac92418)) | 12 mo |
 | Mediaform | ASUS Ascent GX10 1TB (GX10-GG0013BN) | A$8,999 ([listing](https://www.mediaform.com.au/asus-ascent-gx10-ai-supercomputer-mini-pc-powered-by-nvidia-gb10/)) | Check listing |
 | Core Electronics | NVIDIA DGX Blackwell Spark Founders Edition, 4TB | A$8,999 ([listing](https://core-electronics.com.au/nvidia-blackwell-spark.html)) | Check listing |
 | Mediaform | MSI EdgeXpert GB10 4TB (EdgeXpert-34SAU) | A$8,999 ([listing](https://www.mediaform.com.au/msi-edgexpert-ai-supercomputer-mini-pc-powered-by-nvidia-gb10/)) | 3 yr OS ADR |
+| Mwave | ASUS Ascent GX10 1TB (GX10-GG0013BN) | A$9,631.95 ([listing](https://www.mwave.com.au/product/asus-ascent-gx10-ai-nvdia-gb10-128gb-ram-1tb-supercomputer-mini-pc-nvidia-dgx-os-ac92418)) | 12 mo |
 | Scorptec | ASUS Ascent GX10 1TB (GX10-GG0013BN) | A$10,999 ([listing](https://www.scorptec.com.au/product/branded-systems/nuc-mini-pc/120181-gx10-gg0013bn)) | 1 yr |
 | PLE | ASUS Ascent GX10 4TB (GX10-GG0032BN) — storage variant | A$13,999 ([listing](https://www.ple.com.au/products/686787/asus-ascent-gx10-ai-gb10-dgx-spark-supercomputer-mini-pc-4tb128gb)) | 1 yr RTB |
 
-**Notes:** Complete mini PC, ~140–240 W, 128 GB unified memory, ARM. ACL applies. Core Electronics is the NVIDIA DGX Spark FE (4TB), not the ASUS GX10 1TB. The PLE 4TB row is a storage variant, not the cheap Tier 1 entry. Scorptec GX10 was A$8,899 until 22 Aug 2026; cart price is now A$10,999 (often sold out). PLE’s old GX10 1TB product URL redirects to a gaming-PC hub — not quoted here. PCCG also lists GX10 1TB at ~A$9,649 per [price comparison](https://www.tech2have.com.au/store/products/asus-ascent-gx10-ai-supercomputer-nvidia-blackwell-gpu/) (2026-08-25); PCCG has no stable product URL in our checks — confirm on [pccasegear.com](https://www.pccasegear.com) before purchase.
+**Notes:** Complete mini PC, ~140–240 W, 128 GB unified memory, ARM. ACL applies. Core Electronics is the NVIDIA DGX Spark FE (4TB), not the ASUS GX10 1TB. The PLE 4TB row is a storage variant, not the cheap Tier 1 entry. Scorptec GX10 was A$8,899 until 22 Aug 2026; cart price is now A$10,999 (often sold out). Mwave previously appeared as A$6,999 in stale index data; the linked `/product/` page shows A$9,631.95. PLE’s old GX10 1TB product URL redirects to a gaming-PC hub — not quoted here. PCCG also lists GX10 1TB at ~A$9,649 per [price comparison](https://www.tech2have.com.au/store/products/asus-ascent-gx10-ai-supercomputer-nvidia-blackwell-gpu/) (2026-08-25); PCCG has no stable product URL in our checks — confirm on [pccasegear.com](https://www.pccasegear.com) before purchase.
 
 ## Tier 1b — desk / fast 32 GB
 

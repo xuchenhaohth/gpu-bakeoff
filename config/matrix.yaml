@@ -4,7 +4,7 @@ skus:
   dgx_spark_gb10:
     label: bakeoff-spark
     tier: "1"
-    purchase: "DGX Spark / GX10 (~A$6.5–11k)"
+    purchase: "DGX Spark / GX10 (~A$8.5–11k)"
     num_gpus: 1
     gpu_ram_gb: 128
     min_cpu_ram_gb: 128
