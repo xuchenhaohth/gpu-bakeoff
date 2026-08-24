@@ -105,6 +105,10 @@ def main() -> int:
     sku_defs = matrix.get("skus", {})
 
     template = {
+        "dgx_spark_gb10": (
+            "cpu_arch=arm64 num_gpus=1 gpu_ram>=115 gpu_ram<=125 verified=true "
+            "rentable=true direct_port_count>=1"
+        ),
         "rtx5090_1x": (
             "gpu_name=RTX_5090 num_gpus=1 gpu_ram>=31 gpu_ram<=33 verified=true "
             "rentable=true direct_port_count>=1 cpu_ram>=128 reliability>=0.98"
@@ -122,10 +126,6 @@ def main() -> int:
             "gpu_name in [RTX_PRO_6000_WS,RTX_PRO_6000,RTX_PRO_6000_BLACKWELL_SERVER_EDITION] "
             "num_gpus=2 gpu_ram>=90 gpu_ram<=100 verified=true rentable=true "
             "direct_port_count>=1 cpu_ram>=256 reliability>=0.98"
-        ),
-        "dgx_spark_gb10": (
-            "cpu_arch=arm64 num_gpus=1 gpu_ram>=115 gpu_ram<=125 verified=true "
-            "rentable=true direct_port_count>=1"
         ),
     }
 

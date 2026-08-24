@@ -27,7 +27,7 @@ Credits: https://cloud.vast.ai/billing/
 | `stop instance` | GPU stops; disk continues |
 | `destroy instance -y` | All charges stop |
 
-Spend cap in `.env`: `MAX_USD=180`. Launch script refuses if projected 24 h × 5 boxes exceeds cap.
+Spend cap in `.env`: `MAX_USD=180`. The bake-off script refuses if projected serial spend exceeds cap (`sum(dph × MATRIX_TIMEOUT_SEC)` per SKU, default 8 h each). Only one instance runs at a time.
 
 All orchestrator scripts read `VAST_API_KEY` from `.env` and pass `--api-key` to every `vastai` call (including `copy` and `execute`).
 
@@ -37,26 +37,28 @@ Poll `vastai show instance <id> --raw`:
 
 | `actual_status` | Action |
 |-----------------|--------|
-| `null`, `created`, `loading` | Wait (timeout 25 min) |
+| `null`, `created`, `loading` | Wait (`WAIT_TIMEOUT_SEC`, default 25 min) |
 | `running` | Push harness, run matrix |
 | `exited`, `unknown`, `offline` | **Destroy immediately**, try next offer |
-| `stopped` | Destroy or start — we use on-demand only |
+| `stopped` | Destroy — we use on-demand only |
 
-## Search & launch (this project)
+## Pipeline (this project)
 
 ```bash
-uv run python scripts/01_search_offers.py   # writes config/offers.yaml
-uv run python scripts/02_launch.py          # reads offers.yaml top candidate per SKU
-uv run python scripts/03_wait_running.py
+uv run python scripts/01_search_offers.py    # writes config/offers.yaml
+uv run python scripts/02_run_bakeoff.py      # serial per-SKU: launch → matrix → pull → destroy
+uv run python scripts/02_run_bakeoff.py --destroy-only   # emergency cleanup
 ```
 
 Launch flags used:
 
 - On-demand (no `--bid_price`)
-- `--disk 400`
+- `--disk 400` (`DISK_GB`)
 - `--ssh --direct`
 - `--label bakeoff-<sku>`
-- `--env '-e HF_TOKEN=… -e TZ=Australia/Melbourne'`
+- `--env '-e HF_TOKEN=… -e TZ=Australia/Melbourne -e BAKEOFF_SKU=<sku>'`
+
+Matrix completion is detected via `/workspace/bakeoff/results/DONE` on the remote instance (`MATRIX_TIMEOUT_SEC`, default 8 h).
 
 ## File copy
 
@@ -100,6 +102,7 @@ If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 | SSH timeout | Wait longer or destroy and pick higher `reliability` offer |
 | CUDA / sm_120 errors | Wrong image or driver on host — next candidate |
 | OOM on Hunyuan | Check **host RAM** in CSV, not just VRAM |
+| Interrupted run still billing | `uv run python scripts/02_run_bakeoff.py --destroy-only` |
 
 ## Console URLs
 

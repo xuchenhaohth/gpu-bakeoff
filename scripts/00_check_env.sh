@@ -64,7 +64,8 @@ fi
 
 MAX="${MAX_USD:-180}"
 MIN="${MIN_CREDIT_USD:-50}"
-echo "OK  spend cap MAX_USD=$MAX MIN_CREDIT_USD=$MIN"
+MATRIX="${MATRIX_TIMEOUT_SEC:-28800}"
+echo "OK  spend cap MAX_USD=$MAX MIN_CREDIT_USD=$MIN MATRIX_TIMEOUT_SEC=$MATRIX"
 
 mkdir -p results results/artifacts config
 echo "OK  results/ and config/ ready"

@@ -22,6 +22,21 @@ _vllm_model: str | None = None
 _llama_model: str | None = None
 
 
+def llm_extra_args(runtime: str, gpu_count: int) -> dict[str, list[str] | None]:
+    """Build runtime-specific multi-GPU flags for 2-GPU SKUs."""
+    if gpu_count < 2:
+        return {"vllm": None, "llama": None}
+    if runtime == "vllm":
+        return {"vllm": ["--tensor-parallel-size", str(gpu_count)], "llama": None}
+    if runtime == "llama_cpp":
+        split = ",".join(["1"] * gpu_count)
+        return {
+            "vllm": None,
+            "llama": ["--split-mode", "layer", "--tensor-split", split],
+        }
+    return {"vllm": None, "llama": None}
+
+
 def vllm_running() -> bool:
     try:
         urllib.request.urlopen(f"http://127.0.0.1:{VLLM_PORT}/health", timeout=2)
@@ -67,7 +82,7 @@ def start_vllm(model: str, extra_args: list[str] | None = None) -> bool:
     return False
 
 
-def start_llama_server(gguf_path: str | Path) -> bool:
+def start_llama_server(gguf_path: str | Path, extra_args: list[str] | None = None) -> bool:
     global _llama_model
     path = Path(gguf_path)
     if not path.exists():
@@ -87,6 +102,8 @@ def start_llama_server(gguf_path: str | Path) -> bool:
         "--ctx-size",
         "8192",
     ]
+    if extra_args:
+        cmd.extend(extra_args)
     subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(90):
         if llama_running():
@@ -177,10 +194,17 @@ def run_llm_job(
     fail_fast: bool = False,
     *,
     gguf_path: str | Path | None = None,
+    gpu_count: int = 1,
     vllm_extra_args: list[str] | None = None,
+    llama_extra_args: list[str] | None = None,
 ) -> dict:
     if fail_fast:
         return {"pass": False, "status": "no", "error": "fail-fast: model does not fit SKU"}
+
+    if vllm_extra_args is None and llama_extra_args is None and gpu_count >= 2:
+        extras = llm_extra_args(runtime, gpu_count)
+        vllm_extra_args = extras.get("vllm")
+        llama_extra_args = extras.get("llama")
 
     if runtime == "vllm":
         if start_vllm(model, vllm_extra_args) and vllm_running():
@@ -188,7 +212,7 @@ def run_llm_job(
         return _stub_response("vllm", user, max_tokens, "Install vllm on instance for real metrics")
 
     if runtime == "llama_cpp":
-        if gguf_path and start_llama_server(gguf_path) and llama_running():
+        if gguf_path and start_llama_server(gguf_path, llama_extra_args) and llama_running():
             return chat_openai(LLAMA_URL, model, system, user, max_tokens)
         return _stub_response(
             "llama_cpp",

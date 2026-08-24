@@ -1,2 +1,2 @@
 # Placeholder  replace with a 1024x1024 reference frame for video I2V tests.
-# Used by MiniMax H3 FL2VA and LTX-2.5 I2V prompts in config/matrix.yaml.
+# Used by MiniMax H3 video prompts in config/matrix.yaml.

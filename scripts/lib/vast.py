@@ -63,6 +63,10 @@ def vastai_copy(src: str, dst: str, check: bool = True) -> None:
 
 
 def vastai_execute(instance_id: int, cmd: str, check: bool = True) -> None:
+    vastai_execute_output(instance_id, cmd, check=check)
+
+
+def vastai_execute_output(instance_id: int, cmd: str, check: bool = False) -> str:
     proc = subprocess.run(
         _vastai_cmd("execute", str(instance_id), cmd, raw=False),
         capture_output=True,
@@ -73,6 +77,7 @@ def vastai_execute(instance_id: int, cmd: str, check: bool = True) -> None:
             f"vastai execute failed ({proc.returncode}) on {instance_id}\n"
             f"stderr: {proc.stderr}\nstdout: {proc.stdout}"
         )
+    return proc.stdout.strip()
 
 
 def read_yaml(path: Path) -> dict[str, Any]:

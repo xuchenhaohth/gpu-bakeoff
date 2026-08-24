@@ -1,6 +1,18 @@
 # GPU SKUs mapped to AU purchase tiers and test layers.
 
 skus:
+  dgx_spark_gb10:
+    label: bakeoff-spark
+    tier: "1"
+    purchase: "DGX Spark / GX10 (~A$6–9k)"
+    num_gpus: 1
+    gpu_ram_gb: 128
+    min_cpu_ram_gb: 128
+    arch: aarch64
+    compute_cap: "121"
+    memory_type: unified
+    image: null  # filled by 01_search_offers.py from offer metadata
+
   rtx5090_1x:
     label: bakeoff-5090
     tier: "1b"
@@ -34,7 +46,6 @@ skus:
     arch: x86_64
     compute_cap: "120"
     image: vastai/pytorch:@vastai-automatic-tag
-    layer_b: true
 
   pro6000_2x:
     label: bakeoff-pro6000x2
@@ -46,18 +57,6 @@ skus:
     arch: x86_64
     compute_cap: "120"
     image: vastai/pytorch:@vastai-automatic-tag
-
-  dgx_spark_gb10:
-    label: bakeoff-spark
-    tier: "1"
-    purchase: "DGX Spark / GX10 (~A$6–9k)"
-    num_gpus: 1
-    gpu_ram_gb: 128
-    min_cpu_ram_gb: 128
-    arch: aarch64
-    compute_cap: "121"
-    memory_type: unified
-    image: null  # filled by 01_search_offers.py from offer metadata
 
 # Fixed prompts — same across all GPUs
 prompts:

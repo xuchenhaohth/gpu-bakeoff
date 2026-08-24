@@ -56,7 +56,7 @@ Last template update: 2026-08-24. **Verify at retailer checkout.**
 | Dual-GPU platform (EPYC/TR Pro, 256 GB+ RAM, 1600 W PSU, NVMe 2 TB) | ~A$8,000–15,000 |
 | **Total** | **~A$50,000–70,000** |
 
-Only tier that runs **DeepSeek-V4-Flash native** (~170 GB weights) without heavy GGUF.
+Only tier that runs **DeepSeek-V4-Flash** (IQ2 GGUF with tensor-parallel across both cards).
 
 ## Integrators (full workstations + on-site warranty)
 
@@ -75,4 +75,4 @@ Only tier that runs **DeepSeek-V4-Flash native** (~170 GB weights) without heavy
 
 ## 5090 ×2 — do not buy for “64 GB”
 
-Dual GeForce gives **two 32 GB pools**. Not a recommended AU purchase unless bake-off shows unexpected sharding win (unlikely).
+Dual GeForce gives **two 32 GB pools**. LLM bake-off uses tensor-parallel on 2×5090 for Qwen only (DeepSeek is skip-listed). ComfyUI still uses one GPU. Not a recommended AU purchase unless Qwen TP numbers surprise.

@@ -1,6 +1,6 @@
 # GPU bake-off (Harry the Hirer)
 
-24-hour **Vast.ai** evidence run for a boss-facing hardware × model fit matrix. This folder does **not** recommend a purchase until a **Vast GPU run** produces `results/matrix.csv` — local dry-run output is pipeline validation only, not purchase evidence.
+Serial **Vast.ai** evidence run for a boss-facing hardware × model fit matrix. This folder does **not** recommend a purchase until a **Vast GPU run** produces `results/matrix.csv` — local dry-run output is pipeline validation only, not purchase evidence.
 
 > **Harness status:** Remote instances install ComfyUI, vLLM, and llama.cpp via `install_stack.sh`. Without a live GPU, `dry_run_local.py` records `Stub` rows for LLM jobs and GPU-warmup stubs for image/video.
 
@@ -8,7 +8,7 @@
 
 1. [Vast.ai account](https://cloud.vast.ai/) with **≥ US$50** credit (plan assumes ~US$80–150 burn).
 2. API key: [console.vast.ai/manage-keys](https://console.vast.ai/manage-keys/)
-3. Hugging Face token with **gated licenses accepted** for LTX-2.5, Ideogram 4, MiniMax H3, FLUX.2-dev.
+3. Hugging Face token with **gated licenses accepted** for Ideogram 4, MiniMax H3, FLUX.2-dev.
 4. [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
 5. `vastai` CLI installed (see below).
 6. SSH key at `~/.ssh/id_ed25519.pub` (or ed25519 equivalent).
@@ -37,22 +37,20 @@ uv run python scripts/dry_run_local.py
 ./scripts/check.sh
 ```
 
-## 24-hour runbook
+## Runbook
 
-| Hour | Step | Command |
-|------|------|---------|
-| 0–1 | Check env | `./scripts/00_check_env.sh` |
-| 0–1 | Discover offers | `uv run python scripts/01_search_offers.py` |
-| 1 | Launch 5 instances | `uv run python scripts/02_launch.py` |
-| 1–2 | Wait for SSH | `uv run python scripts/03_wait_running.py` |
-| 2–6 | Prefetch + Layer A/B | `uv run python scripts/04_push_and_run.py` |
-| 6–7 | Pull results | `uv run python scripts/05_pull_results.py` |
-| 7 | Destroy (stop billing) | `uv run python scripts/06_destroy.py` |
-| 7–8 | Boss pack | `uv run python scripts/fill_boss_pack.py` then review `docs/BOSS_PACK.md` |
+| Step | Command |
+|------|---------|
+| Check env | `./scripts/00_check_env.sh` |
+| Discover offers | `uv run python scripts/01_search_offers.py` |
+| Serial bake-off (one SKU at a time) | `uv run python scripts/02_run_bakeoff.py` |
+| Boss pack | `uv run python scripts/fill_boss_pack.py` then review `docs/BOSS_PACK.md` |
 
-**Full pipeline (interactive):** `./scripts/run_all.sh` — includes destroy trap on Ctrl+C.
+`02_run_bakeoff.py` runs the full per-SKU lifecycle: launch → wait → matrix → pull → destroy, then moves to the next SKU. Each SKU can run up to `MATRIX_TIMEOUT_SEC` (default 8 h).
 
-**Critical:** Run `06_destroy.py` even if the matrix failed partway — storage charges continue until destroy.
+**Full pipeline:** `./scripts/run_all.sh` — includes destroy trap on Ctrl+C.
+
+**Interrupt cleanup:** `uv run python scripts/02_run_bakeoff.py --destroy-only`
 
 ## Outputs
 
@@ -70,18 +68,18 @@ Dry-run writes to `scripts/remote/results/` only (cleaned up automatically).
 
 | SKU | Maps to AU tier |
 |-----|-----------------|
+| DGX Spark GB10 | Tier 1 low-power (ARM) — runs first |
 | RTX 5090 ×1 | Tier 1b desk workstation |
 | RTX 5090 ×2 | Evidence only (not 64 GB VRAM) |
 | RTX PRO 6000 ×1 | Tier 2 business workstation |
 | RTX PRO 6000 ×2 | Tier 3 capacity |
-| DGX Spark GB10 | Tier 1 low-power (ARM) |
 
-## Layer A vs B
+## Test scope
 
-- **Layer A:** Same quantized checkpoint on every GPU that can load it (fair speed ladder).
-- **Layer B:** Higher precision on **1× PRO 6000** (image/video/LLM) and **native DeepSeek vLLM on 2× PRO 6000**.
-
-DeepSeek: IQ2 GGUF on 96 GB / 192 GB / Spark; fail-fast on 5090; optional native vLLM on 2× PRO 6000.
+- **6 models**, Layer A only (shared quant across SKUs).
+- **Video:** MiniMax H3. **Image:** Ideogram 4, Hunyuan Image 3, FLUX.2-dev. **LLM:** Qwen3.8-27B, DeepSeek-V4-Flash.
+- **DeepSeek:** fail-fast skip on 5090 SKUs (CSV rows only). Runs on Spark and PRO 6000 tiers.
+- **2-GPU SKUs:** LLM jobs use tensor-parallel (vLLM / llama.cpp). ComfyUI stays single-GPU.
 
 ## Support
 

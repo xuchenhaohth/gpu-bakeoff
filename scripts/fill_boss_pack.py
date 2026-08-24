@@ -15,7 +15,7 @@ BOSS = ROOT / "docs" / "BOSS_PACK.md"
 
 def main() -> int:
     if not CSV.exists():
-        print(f"Missing {CSV} — run 05_pull_results.py first")
+        print(f"Missing {CSV} — run 02_run_bakeoff.py first")
         return 1
     rows = list(csv.DictReader(CSV.open()))
     fit: defaultdict[str, dict[str, str]] = defaultdict(dict)

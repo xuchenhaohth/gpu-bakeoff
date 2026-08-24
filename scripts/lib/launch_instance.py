@@ -37,7 +37,11 @@ def launch_one(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> 
 
     hf = os.environ.get("HF_TOKEN", "")
     tz = os.environ.get("TZ", "Australia/Melbourne")
-    env_str = f"-e HF_TOKEN={hf} -e TZ={tz} -e BAKEOFF_SKU={sku_id}"
+    num_gpus = sku_meta.get("num_gpus", 1)
+    env_str = (
+        f"-e HF_TOKEN={hf} -e TZ={tz} -e BAKEOFF_SKU={sku_id} "
+        f"-e BAKEOFF_GPU_COUNT={num_gpus}"
+    )
 
     print(f"Launching {sku_id} offer={offer_id} label={label} image={image}")
     result = vastai(
@@ -71,3 +75,20 @@ def launch_one(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> 
         }
     print(f"  FAILED: {result}")
     return None
+
+
+def launch_first_valid(
+    sku_id: str,
+    candidates: list[dict[str, Any]],
+    sku_meta: dict[str, Any],
+) -> tuple[dict[str, Any] | None, list[Any]]:
+    for i, offer in enumerate(candidates):
+        err = validate_offer(sku_id, offer, sku_meta)
+        if err:
+            print(f"  skip candidate {offer.get('id')}: {err}")
+            continue
+        rec = launch_one(sku_id, offer, sku_meta)
+        if rec:
+            backup_ids = [c["id"] for c in candidates[i + 1 : i + 4]]
+            return rec, backup_ids
+    return None, []

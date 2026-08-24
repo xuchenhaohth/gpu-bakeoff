@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Matrix runner — executes Layer A/B jobs per SKU and writes results/matrix.csv.
+Matrix runner — executes Layer A jobs per SKU and writes results/matrix.csv.
 
 Designed to run on each Vast instance at /workspace/bakeoff after onstart.sh.
 """
@@ -14,7 +14,7 @@ import sys
 from datetime import datetime, timezone
 
 from comfy_client import run_image_job, run_video_job
-from llm_client import run_llm_job
+from llm_client import llm_extra_args, run_llm_job
 from paths import REMOTE_ROOT, RESULTS_DIR, load_config, resolve_asset
 from sampler import timed_run
 
@@ -23,13 +23,8 @@ RESULTS_DIR.mkdir(exist_ok=True)
 (REMOTE_ROOT / "artifacts").mkdir(exist_ok=True)
 
 IMAGE_MODELS = ["ideogram_4", "flux2_dev", "hunyuan_image_3"]
-VIDEO_MODELS = ["minimax_h3", "ltx_25"]
+VIDEO_MODELS = ["minimax_h3"]
 LLM_MODELS = ["qwen38_27b", "deepseek_v4_flash"]
-
-LAYER_B_BY_SKU = {
-    "pro6000_1x": ["ltx_25", "hunyuan_image_3", "flux2_dev", "qwen38_27b"],
-    "pro6000_2x": ["deepseek_v4_flash"],
-}
 
 FIELDNAMES = [
     "timestamp",
@@ -65,6 +60,13 @@ def sku_meta(matrix: dict) -> dict:
     return matrix.get("skus", {}).get(SKU, {})
 
 
+def gpu_count(matrix: dict) -> int:
+    env_count = os.environ.get("BAKEOFF_GPU_COUNT")
+    if env_count:
+        return max(1, int(env_count))
+    return max(1, int(sku_meta(matrix).get("num_gpus", 1)))
+
+
 def should_skip_model(model_key: str, models: dict) -> tuple[bool, str]:
     spec = models.get(model_key, {})
     skip = spec.get("skip_skus") or []
@@ -97,7 +99,7 @@ def classify_fit(status: str, peak: dict, protocol: dict, job_type: str, metrics
     return "Quantized"
 
 
-def row_base(layer: str, model_key: str, prompt_id: str, precision: str, runtime: str) -> dict:
+def row_base(model_key: str, prompt_id: str, precision: str, runtime: str) -> dict:
     meta = sku_meta(load_config("matrix.yaml"))
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -105,7 +107,7 @@ def row_base(layer: str, model_key: str, prompt_id: str, precision: str, runtime
         "tier": meta.get("tier", ""),
         "gpu_count": meta.get("num_gpus", 1),
         "memory_type": meta.get("memory_type", "discrete"),
-        "layer": layer,
+        "layer": "A",
         "model": model_key,
         "prompt_id": prompt_id,
         "precision": precision,
@@ -122,12 +124,6 @@ def apply_peak(row: dict, peak: dict) -> None:
             row[f"peak_{k}"] = v
 
 
-def layer_precision(spec: dict, layer: str) -> str:
-    if layer == "A":
-        return spec["layer_a"]["precision"]
-    return spec.get("layer_b", {}).get("precision", "")
-
-
 def llm_user_text(lp: dict) -> str:
     if lp.get("user_file"):
         path = resolve_asset(lp["user_file"])
@@ -136,8 +132,8 @@ def llm_user_text(lp: dict) -> str:
     return lp.get("user", "Say OK.")
 
 
-def llm_model_id(spec: dict, layer: str) -> str:
-    layer_cfg = spec["layer_a"] if layer == "A" else spec.get("layer_b", {})
+def llm_model_id(spec: dict) -> str:
+    layer_cfg = spec["layer_a"]
     return layer_cfg.get("checkpoint") or spec.get("hf_id", "")
 
 
@@ -158,16 +154,9 @@ def resolve_gguf_path(spec: dict) -> str | None:
         return None
 
 
-def run_image_matrix(layer: str, model_key: str, models: dict, matrix: dict, writer, protocol: dict) -> None:
+def run_image_matrix(model_key: str, models: dict, matrix: dict, writer, protocol: dict) -> None:
     spec = models[model_key]
-    if layer == "B" and spec.get("layer_b", {}).get("skip"):
-        return
-    if layer == "B":
-        lb = spec.get("layer_b", {})
-        if lb.get("sku_filter") and lb["sku_filter"] != SKU:
-            return
-
-    precision = layer_precision(spec, layer)
+    precision = spec["layer_a"]["precision"]
     unified = sku_meta(matrix).get("memory_type") == "unified"
     checkpoint = spec.get("layer_a", {}).get("file_hint") or spec.get("hf_id")
 
@@ -190,7 +179,7 @@ def run_image_matrix(layer: str, model_key: str, models: dict, matrix: dict, wri
             times.append(elapsed)
             peak_summary = peak
 
-        r = row_base(layer, model_key, p["id"], precision, spec.get("runtime", "comfyui"))
+        r = row_base(model_key, p["id"], precision, spec.get("runtime", "comfyui"))
         r["wall_sec"] = round(sum(times) / len(times), 3)
         r["images_per_min"] = round(60 / r["wall_sec"], 2) if r["wall_sec"] else 0
         apply_peak(r, peak_summary)
@@ -204,16 +193,9 @@ def run_image_matrix(layer: str, model_key: str, models: dict, matrix: dict, wri
         writer.writerow(r)
 
 
-def run_video_matrix(layer: str, model_key: str, models: dict, matrix: dict, writer, protocol: dict) -> None:
+def run_video_matrix(model_key: str, models: dict, matrix: dict, writer, protocol: dict) -> None:
     spec = models[model_key]
-    if layer == "B" and spec.get("layer_b", {}).get("skip"):
-        return
-    if layer == "B":
-        lb = spec.get("layer_b", {})
-        if lb.get("sku_filter") and lb["sku_filter"] != SKU:
-            return
-
-    precision = layer_precision(spec, layer)
+    precision = spec["layer_a"]["precision"]
     unified = sku_meta(matrix).get("memory_type") == "unified"
     checkpoint = spec.get("layer_a", {}).get("file_hint") or spec.get("hf_id")
     prompts = matrix.get("prompts", {}).get("video", [])
@@ -247,7 +229,7 @@ def run_video_matrix(layer: str, model_key: str, models: dict, matrix: dict, wri
         times.append(elapsed)
         peak_summary = peak
 
-    r = row_base(layer, model_key, vp.get("id", "vid01"), precision, spec.get("runtime", "comfyui"))
+    r = row_base(model_key, vp.get("id", "vid01"), precision, spec.get("runtime", "comfyui"))
     r["wall_sec"] = round(sum(times) / len(times), 3) if times else 0
     apply_peak(r, peak_summary)
     status = last_job.get("status", "quantized")
@@ -259,7 +241,7 @@ def run_video_matrix(layer: str, model_key: str, models: dict, matrix: dict, wri
     writer.writerow(r)
 
 
-def run_llm_matrix(layer: str, model_key: str, models: dict, matrix: dict, writer, protocol: dict) -> None:
+def run_llm_matrix(model_key: str, models: dict, matrix: dict, writer, protocol: dict) -> None:
     spec = models[model_key]
     skip, reason = should_skip_model(model_key, models)
     if skip:
@@ -267,24 +249,20 @@ def run_llm_matrix(layer: str, model_key: str, models: dict, matrix: dict, write
             lp = matrix.get("prompts", {}).get("llm", {}).get(key, {})
             if not lp:
                 continue
-            r = row_base(layer, model_key, lp.get("id", key), "n/a", spec.get("runtime", ""))
+            r = row_base(model_key, lp.get("id", key), "n/a", spec.get("runtime", ""))
             r["pass"] = False
             r["fit_status"] = "No"
             r["error"] = reason
             writer.writerow(r)
         return
 
-    if layer == "B":
-        lb = spec.get("layer_b", {})
-        if lb.get("sku_filter") and lb["sku_filter"] != SKU:
-            if not lb.get("optional"):
-                return
-
-    precision = layer_precision(spec, layer)
+    precision = spec["layer_a"]["precision"]
     unified = sku_meta(matrix).get("memory_type") == "unified"
     runtime = spec.get("runtime", "vllm")
-    model_id = llm_model_id(spec, layer)
-    gguf = resolve_gguf_path(spec) if runtime == "llama_cpp" and layer == "A" else None
+    model_id = llm_model_id(spec)
+    gguf = resolve_gguf_path(spec) if runtime == "llama_cpp" else None
+    ngpus = gpu_count(matrix)
+    extra = llm_extra_args(runtime, ngpus)
 
     llm_prompts = matrix.get("prompts", {}).get("llm", {})
     for key in ("short", "long"):
@@ -305,10 +283,13 @@ def run_llm_matrix(layer: str, model_key: str, models: dict, matrix: dict, write
                 user,
                 max_tokens=max_tok,
                 gguf_path=gguf,
+                gpu_count=ngpus,
+                vllm_extra_args=extra.get("vllm"),
+                llama_extra_args=extra.get("llama"),
             )
 
         elapsed, peak = timed_run(job, interval=protocol.get("sampler_interval_sec", 1.5), unified=unified)
-        r = row_base(layer, model_key, lp.get("id", key), precision, runtime)
+        r = row_base(model_key, lp.get("id", key), precision, runtime)
         r["wall_sec"] = round(elapsed, 3)
         r.update({k: v for k, v in metrics.items() if k not in ("pass",)})
         apply_peak(r, peak)
@@ -324,16 +305,16 @@ def run_llm_matrix(layer: str, model_key: str, models: dict, matrix: dict, write
         writer.writerow(r)
 
 
-def run_layer(layer: str, models: dict, matrix: dict, writer, protocol: dict) -> None:
+def run_layer(models: dict, matrix: dict, writer, protocol: dict) -> None:
     for mk in IMAGE_MODELS:
         if mk in models:
-            run_image_matrix(layer, mk, models, matrix, writer, protocol)
+            run_image_matrix(mk, models, matrix, writer, protocol)
     for mk in VIDEO_MODELS:
         if mk in models:
-            run_video_matrix(layer, mk, models, matrix, writer, protocol)
+            run_video_matrix(mk, models, matrix, writer, protocol)
     for mk in LLM_MODELS:
         if mk in models:
-            run_llm_matrix(layer, mk, models, matrix, writer, protocol)
+            run_llm_matrix(mk, models, matrix, writer, protocol)
 
 
 def main() -> int:
@@ -346,19 +327,7 @@ def main() -> int:
     with open(out_csv, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES, extrasaction="ignore")
         writer.writeheader()
-        run_layer("A", models, matrix, writer, protocol)
-        for sku_filter, model_keys in LAYER_B_BY_SKU.items():
-            if SKU != sku_filter:
-                continue
-            for mk in model_keys:
-                if mk not in models:
-                    continue
-                if mk in LLM_MODELS:
-                    run_llm_matrix("B", mk, models, matrix, writer, protocol)
-                elif mk in VIDEO_MODELS:
-                    run_video_matrix("B", mk, models, matrix, writer, protocol)
-                else:
-                    run_image_matrix("B", mk, models, matrix, writer, protocol)
+        run_layer(models, matrix, writer, protocol)
 
     print(f"Wrote {out_csv}")
     subprocess.run(

@@ -1,6 +1,6 @@
 # Hugging Face access checklist
 
-Complete **before** `04_push_and_run.py` (remote prefetch).
+Complete **before** `02_run_bakeoff.py` (remote prefetch runs on each instance).
 
 ## Token
 
@@ -14,7 +14,6 @@ Log in to Hugging Face and click **Agree** on each model page:
 | Model | URL |
 |-------|-----|
 | MiniMax H3 | https://huggingface.co/MiniMaxAI/MiniMax-H3 |
-| LTX-2.5 | https://huggingface.co/Lightricks/LTX-2.5 |
 | Ideogram 4 NF4 | https://huggingface.co/ideogram-ai/ideogram-4-nf4 |
 | FLUX.2-dev | https://huggingface.co/black-forest-labs/FLUX.2-dev |
 

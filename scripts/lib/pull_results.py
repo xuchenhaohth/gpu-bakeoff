@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pull results from running/completed instances."""
+"""Pull per-SKU results from Vast instances and merge matrix CSVs."""
 
 from __future__ import annotations
 
@@ -9,41 +9,35 @@ import sys
 from glob import glob
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
-
-from lib.vast import load_dotenv, load_instances, vastai_copy  # noqa: E402
+from lib.vast import ROOT, vastai_copy
 
 RESULTS = ROOT / "results"
 
 
-def pull(instance_id: int, remote: str, local: Path) -> None:
-    local.mkdir(parents=True, exist_ok=True)
+def pull_remote(instance_id: int, remote: str, local: Path, *, is_dir: bool) -> None:
     src = f"{instance_id}:{remote}"
-    dst = f"local:{local}/"
+    if is_dir:
+        local.mkdir(parents=True, exist_ok=True)
+        dst = f"local:{local}/"
+    else:
+        local.parent.mkdir(parents=True, exist_ok=True)
+        dst = f"local:{local}"
     print(f"Pull {src} -> {dst}")
     vastai_copy(src, dst, check=False)
 
 
-def main() -> int:
-    load_dotenv()
-    state = load_instances()
+def pull_sku(instance_id: int, sku_id: str) -> None:
     RESULTS.mkdir(parents=True, exist_ok=True)
     (RESULTS / "artifacts").mkdir(exist_ok=True)
+    sku_dir = RESULTS / sku_id
+    pull_remote(instance_id, "/workspace/bakeoff/results/", sku_dir, is_dir=True)
+    pull_remote(instance_id, "/workspace/bakeoff/run.log", sku_dir / "run.log", is_dir=False)
 
-    for sku_id, rec in state.get("instances", {}).items():
-        if rec.get("skipped"):
-            continue
-        iid = rec.get("instance_id")
-        if not iid:
-            continue
-        sku_dir = RESULTS / sku_id
-        pull(int(iid), "/workspace/bakeoff/results/", sku_dir)
-        pull(int(iid), "/workspace/bakeoff/run.log", sku_dir / "run.log")
 
+def merge_results() -> bool:
     merged = RESULTS / "matrix.csv"
     header = None
-    rows = []
+    rows: list[dict[str, str]] = []
     for path in glob(str(RESULTS / "*/matrix.csv")):
         with open(path, newline="") as f:
             r = csv.DictReader(f)
@@ -69,10 +63,6 @@ def main() -> int:
             ],
             check=False,
         )
-    else:
-        print("No matrix.csv files found yet — matrix may still be running")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+        return True
+    print("No matrix.csv files found — no SKU produced results")
+    return False

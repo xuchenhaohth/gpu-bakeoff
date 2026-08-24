@@ -4,7 +4,7 @@
 
 **Prepared by:** IT  
 **Date:** _TBD_  
-**Evidence:** 24-hour Vast.ai rental bake-off (`gpu-bakeoff/results/`)
+**Evidence:** Serial Vast.ai rental bake-off (`gpu-bakeoff/results/`)
 
 ---
 
@@ -16,13 +16,13 @@ _TBD: Under our budget options, which models run locally for video/image generat
 
 ## What we tested
 
-Seven open-weight models across five GPU configurations matching our shopping list:
+Six open-weight models across five GPU configurations matching our shopping list:
 
-- MiniMax H3, LTX-2.5 (video)
+- MiniMax H3 (video)
 - Ideogram 4, Hunyuan Image 3.0, FLUX.2-dev (image)
 - Qwen3.8-27B, DeepSeek-V4-Flash (agents)
 
-Same prompts and quantization (Layer A) for fair comparison; higher precision on 1× PRO 6000 (Layer B).
+Same prompts and Layer A quantization for fair comparison. LLM jobs use tensor-parallel on 2-GPU SKUs; ComfyUI uses one GPU.
 
 ---
 
@@ -74,7 +74,7 @@ _TBD after run — examples:_
 
 ## Rental cost of this test
 
-_Vast.ai on-demand, ~US$80–150 for 24 h parallel run — not included in hardware budget._
+_Vast.ai on-demand, ~US$80–150 for serial per-SKU run — not included in hardware budget._
 
 ---
 
