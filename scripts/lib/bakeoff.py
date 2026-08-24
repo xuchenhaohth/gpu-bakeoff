@@ -8,7 +8,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from lib.destroy import destroy_instance
-from lib.launch_instance import launch_first_valid
+from lib.instance_lifecycle import (
+    ResumeMode,
+    reconcile_bakeoff_instances,
+    resolve_sku_instance,
+)
 from lib.matrix_poll import wait_for_matrix
 from lib.pull_results import merge_results, pull_sku
 from lib.push_and_run import push_and_run
@@ -61,16 +65,30 @@ def run_one_sku(
     rec: dict[str, Any],
     offers: dict[str, Any],
     sku_meta: dict[str, Any],
+    mode: ResumeMode = "fresh",
 ) -> tuple[bool, dict[str, Any]]:
     """Wait, run matrix, pull results, and destroy one SKU instance."""
-    running = wait_until_running(sku_id, rec, offers, sku_meta)
-    if not running:
-        rec["error"] = "never reached running"
-        return False, rec
+    if mode == "pull_only":
+        iid = int(rec["instance_id"])
+        try:
+            pull_sku(iid, sku_id)
+            return True, rec
+        finally:
+            destroy_instance(rec, sku_id)
+
+    running = rec
+    if mode in ("fresh", "wait"):
+        waited = wait_until_running(sku_id, rec, offers, sku_meta)
+        if not waited:
+            if not rec.get("error"):
+                rec["error"] = "never reached running"
+            return False, rec
+        running = waited
 
     iid = int(running["instance_id"])
     try:
-        push_and_run(iid, sku_id)
+        if mode in ("fresh", "wait", "push_and_run"):
+            push_and_run(iid, sku_id)
         running["matrix_status"] = wait_for_matrix(iid)
         pull_sku(iid, sku_id)
         return True, running
@@ -84,19 +102,19 @@ def run_serial() -> int:
 
     offers = read_yaml(OFFERS_PATH)
     matrix = read_yaml(MATRIX_PATH)
+    matrix_skus = matrix.get("skus", {})
     spend_check(offers)
 
-    state: dict[str, Any] = {
-        "instances": {},
-        "launched_at": datetime.now(timezone.utc).isoformat(),
-    }
+    state = reconcile_bakeoff_instances(matrix_skus)
+    if not state.get("launched_at"):
+        state["launched_at"] = datetime.now(timezone.utc).isoformat()
 
     attempted = 0
     succeeded = 0
 
     for sku_id, block in offers.get("skus", {}).items():
         cands = block.get("candidates") or []
-        sku_meta = block.get("sku_meta") or matrix.get("skus", {}).get(sku_id, {})
+        sku_meta = block.get("sku_meta") or matrix_skus.get(sku_id, {})
         if not cands:
             if sku_id == "dgx_spark_gb10":
                 print(f"Skipping {sku_id} — no offers")
@@ -109,7 +127,8 @@ def run_serial() -> int:
         attempted += 1
         print(f"\n== SKU {sku_id} ({attempted}) ==")
 
-        rec, backup_ids = launch_first_valid(sku_id, cands, sku_meta)
+        prev_rec = state.get("instances", {}).get(sku_id)
+        rec, backup_ids, mode = resolve_sku_instance(sku_id, sku_meta, cands, prev_rec)
         if not rec:
             print(f"All candidates failed validation or launch for {sku_id}")
             state["instances"][sku_id] = {"sku_id": sku_id, "error": "launch_failed"}
@@ -117,8 +136,11 @@ def run_serial() -> int:
             continue
 
         rec["backup_offer_ids"] = backup_ids
+        state["instances"][sku_id] = rec
+        save_instances(state)
+
         try:
-            ok, rec = run_one_sku(sku_id, rec, offers, sku_meta)
+            ok, rec = run_one_sku(sku_id, rec, offers, sku_meta, mode=mode)
             if ok:
                 succeeded += 1
             else:
@@ -131,7 +153,10 @@ def run_serial() -> int:
 
         state["instances"][sku_id] = rec
         save_instances(state)
-        print(f"  {sku_id} complete — destroyed instance {rec.get('instance_id')}")
+        if rec.get("destroyed"):
+            print(f"  {sku_id} complete — destroyed instance {rec.get('instance_id')}")
+        else:
+            print(f"  {sku_id} complete — instance {rec.get('instance_id')}")
 
     merge_results()
     print(f"\nSaved {ROOT / 'config' / 'instances.json'}")

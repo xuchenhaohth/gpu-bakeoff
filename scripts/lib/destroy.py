@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from lib.vast import load_instances, save_instances, vastai
+from lib.vast import ROOT, load_instances, read_yaml, save_instances, vastai
 
 
 def destroy_instance(rec: dict[str, Any], sku_id: str = "") -> None:
@@ -20,13 +20,21 @@ def destroy_instance(rec: dict[str, Any], sku_id: str = "") -> None:
 
 
 def destroy_all_leftovers() -> int:
-    """Destroy any instances still recorded in config/instances.json."""
+    """Destroy bakeoff instances from config/instances.json and API label scan."""
     state = load_instances()
     instances = state.get("instances", {})
-    if not instances:
-        return 0
     for sku_id, rec in instances.items():
         destroy_instance(rec, sku_id)
+
+    matrix_path = ROOT / "config" / "matrix.yaml"
+    matrix_skus = read_yaml(matrix_path).get("skus", {}) if matrix_path.exists() else {}
+    from lib.instance_lifecycle import destroy_bakeoff_api_instances
+
+    api_destroyed = destroy_bakeoff_api_instances(matrix_skus)
+
     save_instances(state)
-    print("Destroyed leftover instances — billing stopped")
+    print(
+        f"Destroyed leftover instances ({len(instances)} in json, "
+        f"{api_destroyed} from API scan) — billing stopped"
+    )
     return 0

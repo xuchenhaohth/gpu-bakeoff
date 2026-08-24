@@ -19,7 +19,7 @@ from lib.sku_offers import (  # noqa: E402
     ram_to_gb,
     rank_candidates,
 )
-from lib.vast import load_dotenv, read_yaml, vastai, write_yaml  # noqa: E402
+from lib.vast import load_dotenv, normalize_vast_list, read_yaml, vastai, write_yaml  # noqa: E402
 
 OFFERS_PATH = ROOT / "config" / "offers.yaml"
 MATRIX_PATH = ROOT / "config" / "matrix.yaml"
@@ -27,15 +27,7 @@ SPARK_FALLBACK_QUERY = "cpu_arch=arm64 num_gpus=1 rentable=true direct_port_coun
 
 
 def normalize_offers(raw) -> list[dict]:
-    if raw is None:
-        return []
-    if isinstance(raw, list):
-        return raw
-    if isinstance(raw, dict):
-        if "offers" in raw:
-            return raw["offers"]
-        return [raw]
-    return []
+    return normalize_vast_list(raw, "offers")
 
 
 def offer_row(o: dict) -> dict:

@@ -46,11 +46,13 @@ uv run python scripts/dry_run_local.py
 | Serial bake-off (one SKU at a time) | `uv run python scripts/02_run_bakeoff.py` |
 | Boss pack | `uv run python scripts/fill_boss_pack.py` then review `docs/BOSS_PACK.md` |
 
-`02_run_bakeoff.py` runs the full per-SKU lifecycle: launch → wait → matrix → pull → destroy, then moves to the next SKU. Each SKU can run up to `MATRIX_TIMEOUT_SEC` (default 8 h).
+`02_run_bakeoff.py` runs the full per-SKU lifecycle: reconcile stale instances → launch or reuse → wait → matrix → pull → destroy, then moves to the next SKU. Each SKU can run up to `MATRIX_TIMEOUT_SEC` (default 8 h).
 
 **Full pipeline:** `./scripts/run_all.sh` — includes destroy trap on Ctrl+C.
 
 **Interrupt cleanup:** `uv run python scripts/02_run_bakeoff.py --destroy-only`
+
+**Resume after interrupt:** Re-run `02_run_bakeoff.py` — healthy instances are reused (matrix wait/pull); dead orphans are destroyed at startup. See [docs/VAST.md](docs/VAST.md#stale-instances-reuse-vs-destroy).
 
 ## Outputs
 

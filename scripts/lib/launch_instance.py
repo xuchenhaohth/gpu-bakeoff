@@ -13,7 +13,19 @@ DISK_GB = int(os.environ.get("DISK_GB", "400"))
 DEFAULT_IMAGE = "vastai/pytorch:@vastai-automatic-tag"
 
 
-def resolve_image(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> str:
+def backup_offer_ids(candidates: list[dict[str, Any]], offer_id: Any | None) -> list[Any]:
+    out: list[Any] = []
+    for cand in candidates:
+        cid = cand.get("id")
+        if not cid or cid == offer_id:
+            continue
+        out.append(cid)
+        if len(out) >= 3:
+            break
+    return out
+
+
+def resolve_image(offer: dict[str, Any], sku_meta: dict[str, Any]) -> str:
     image = sku_meta.get("image") or offer.get("image")
     if not image:
         image = DEFAULT_IMAGE
@@ -28,7 +40,7 @@ def launch_one(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> 
 
     offer_id = offer["id"]
     label = sku_meta.get("label") or f"bakeoff-{sku_id}"
-    image = resolve_image(sku_id, offer, sku_meta)
+    image = resolve_image(offer, sku_meta)
 
     hf = os.environ.get("HF_TOKEN", "")
     tz = os.environ.get("TZ", "Australia/Melbourne")
@@ -85,13 +97,12 @@ def launch_first_valid(
     candidates: list[dict[str, Any]],
     sku_meta: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, list[Any]]:
-    for i, offer in enumerate(candidates):
+    for offer in candidates:
         err = validate_offer(sku_id, offer, sku_meta)
         if err:
             print(f"  skip candidate {offer.get('id')}: {err}")
             continue
         rec = launch_one(sku_id, offer, sku_meta)
         if rec:
-            backup_ids = [c["id"] for c in candidates[i + 1 : i + 4]]
-            return rec, backup_ids
+            return rec, backup_offer_ids(candidates, offer.get("id"))
     return None, []

@@ -1,1 +1,13 @@
-{"instances": {}}
+{
+  "launched_at": "2026-08-25T00:00:00+00:00",
+  "instances": {
+    "rtx5090_1x": {
+      "sku_id": "rtx5090_1x",
+      "instance_id": 12345678,
+      "offer_id": 45498496,
+      "label": "bakeoff-5090",
+      "actual_status": "running",
+      "destroyed": false
+    }
+  }
+}

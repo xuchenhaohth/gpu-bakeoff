@@ -13,6 +13,20 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def normalize_vast_list(raw: Any, nested_key: str | None = None) -> list[dict[str, Any]]:
+    """Normalize vastai --raw JSON (list, single dict, or keyed wrapper) to a list."""
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, dict):
+        if nested_key and nested_key in raw:
+            nested = raw[nested_key]
+            return nested if isinstance(nested, list) else [nested]
+        return [raw]
+    return []
+
+
 def load_dotenv() -> None:
     env_path = ROOT / ".env"
     if not env_path.exists():

@@ -42,6 +42,8 @@ Poll `vastai show instance <id> --raw`:
 | `exited`, `unknown`, `offline` | **Destroy immediately**, try next offer |
 | `stopped` | Destroy — we use on-demand only |
 
+**Orchestrator note:** Vast returns JSON `null` for `actual_status` while provisioning. Do not treat that as the string `unknown` — poll until a real status appears or timeout.
+
 ## Pipeline (this project)
 
 ```bash
@@ -59,6 +61,22 @@ Launch flags used:
 - `--env '-e HF_TOKEN=… -e TZ=Australia/Melbourne -e BAKEOFF_SKU=<sku>'`
 
 Matrix completion is detected via `/workspace/bakeoff/results/DONE` on the remote instance (`MATRIX_TIMEOUT_SEC`, default 8 h).
+
+## Stale instances (reuse vs destroy)
+
+On each run, before launching:
+
+1. **Reconcile** — scan `vastai show instances` for matrix labels (`bakeoff-spark`, `bakeoff-5090`, …)
+2. **Destroy** dead instances (`exited`, `unknown`, `offline`, `stopped`) and duplicate labels (keep one running instance if any)
+3. **Reuse** when a healthy instance exists for the SKU:
+   - `loading` / provisioning → wait on existing instance (no new launch)
+   - `running` + matrix incomplete → resume matrix or push harness if needed
+   - `running` + `results/DONE` present → pull results and destroy
+4. **Launch** only when no reusable instance exists
+
+State is saved to `config/instances.json` immediately after resolve/launch so `--destroy-only` works mid-run.
+
+`--destroy-only` destroys instances listed in `instances.json` **and** any remaining bakeoff-labeled instances on the account.
 
 ## File copy
 
@@ -103,6 +121,7 @@ If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 | CUDA / sm_120 errors | Wrong image or driver on host — next candidate |
 | OOM on Hunyuan | Check **host RAM** in CSV, not just VRAM |
 | Interrupted run still billing | `uv run python scripts/02_run_bakeoff.py --destroy-only` |
+| Re-run launches duplicate instance | Re-run should **reuse** running bakeoff-labeled instances — check reconcile log at startup |
 
 ## Console URLs
 
