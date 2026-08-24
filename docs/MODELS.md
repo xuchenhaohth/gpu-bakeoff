@@ -24,7 +24,7 @@ Set `HF_TOKEN` in `.env`. Remote prefetch uses `huggingface-cli login --token $H
 | ComfyUI | Latest git @ run date | Image/video via `assets/workflows/` |
 | vLLM | ≥ 0.27.x | Qwen + optional DeepSeek native |
 | llama.cpp | server binary | DeepSeek GGUF |
-| Python | 3.10+ | Remote venv in `onstart.sh` |
+| Python | 3.10+ | Remote `uv venv` in `onstart.sh` |
 
 | Model | Workflow | Custom nodes |
 |-------|----------|--------------|

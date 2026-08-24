@@ -45,9 +45,9 @@ Poll `vastai show instance <id> --raw`:
 ## Search & launch (this project)
 
 ```bash
-python3 scripts/01_search_offers.py   # writes config/offers.yaml
-python3 scripts/02_launch.py          # reads offers.yaml top candidate per SKU
-python3 scripts/03_wait_running.py
+uv run python scripts/01_search_offers.py   # writes config/offers.yaml
+uv run python scripts/02_launch.py          # reads offers.yaml top candidate per SKU
+uv run python scripts/03_wait_running.py
 ```
 
 Launch flags used:

@@ -9,8 +9,9 @@
 1. [Vast.ai account](https://cloud.vast.ai/) with **≥ US$50** credit (plan assumes ~US$80–150 burn).
 2. API key: [console.vast.ai/manage-keys](https://console.vast.ai/manage-keys/)
 3. Hugging Face token with **gated licenses accepted** for LTX-2.5, Ideogram 4, MiniMax H3, FLUX.2-dev.
-4. `vastai` CLI installed (see below).
-5. SSH key at `~/.ssh/id_ed25519.pub` (or ed25519 equivalent).
+4. [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
+5. `vastai` CLI installed (see below).
+6. SSH key at `~/.ssh/id_ed25519.pub` (or ed25519 equivalent).
 
 ## One-time setup
 
@@ -26,11 +27,11 @@ cp .env.example .env
 vastai set api-key "$VAST_API_KEY"
 vastai create ssh-key ~/.ssh/id_ed25519.pub
 
-pip install -r requirements.txt   # local orchestrator + dev tools
+uv sync   # local orchestrator + dev tools
 ./scripts/00_check_env.sh
 
 # Validate CSV/report pipeline without Vast billing
-python3 scripts/dry_run_local.py
+uv run python scripts/dry_run_local.py
 
 # Lint, typecheck, and smoke test
 ./scripts/check.sh
@@ -41,13 +42,13 @@ python3 scripts/dry_run_local.py
 | Hour | Step | Command |
 |------|------|---------|
 | 0–1 | Check env | `./scripts/00_check_env.sh` |
-| 0–1 | Discover offers | `python3 scripts/01_search_offers.py` |
-| 1 | Launch 5 instances | `python3 scripts/02_launch.py` |
-| 1–2 | Wait for SSH | `python3 scripts/03_wait_running.py` |
-| 2–6 | Prefetch + Layer A/B | `python3 scripts/04_push_and_run.py` |
-| 6–7 | Pull results | `python3 scripts/05_pull_results.py` |
-| 7 | Destroy (stop billing) | `python3 scripts/06_destroy.py` |
-| 7–8 | Boss pack | `python3 scripts/fill_boss_pack.py` then review `docs/BOSS_PACK.md` |
+| 0–1 | Discover offers | `uv run python scripts/01_search_offers.py` |
+| 1 | Launch 5 instances | `uv run python scripts/02_launch.py` |
+| 1–2 | Wait for SSH | `uv run python scripts/03_wait_running.py` |
+| 2–6 | Prefetch + Layer A/B | `uv run python scripts/04_push_and_run.py` |
+| 6–7 | Pull results | `uv run python scripts/05_pull_results.py` |
+| 7 | Destroy (stop billing) | `uv run python scripts/06_destroy.py` |
+| 7–8 | Boss pack | `uv run python scripts/fill_boss_pack.py` then review `docs/BOSS_PACK.md` |
 
 **Full pipeline (interactive):** `./scripts/run_all.sh` — includes destroy trap on Ctrl+C.
 

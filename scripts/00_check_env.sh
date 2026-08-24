@@ -26,12 +26,12 @@ else
   die "vastai CLI not found — curl -fsSL https://vast.ai/install.sh | bash"
 fi
 
-# Python + PyYAML
-if command -v python3 >/dev/null 2>&1; then
-  echo "OK  python3 $(python3 --version)"
-  python3 -c "import yaml" 2>/dev/null || die "pip install pyyaml"
+# uv + project deps
+if command -v uv >/dev/null 2>&1; then
+  echo "OK  $(uv --version)"
+  uv run python -c "import yaml" 2>/dev/null || die "uv sync  # install project deps"
 else
-  die "python3 not found"
+  die "uv not found — curl -LsSf https://astral.sh/uv/install.sh | sh"
 fi
 
 # SSH key
@@ -49,7 +49,7 @@ fi
 if [[ -z "${VAST_API_KEY:-}" ]]; then
   die "VAST_API_KEY empty in .env"
 else
-  if vastai show user --raw 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print('OK  Vast user:', d.get('email','?'), 'credit:', d.get('credit','?'))" 2>/dev/null; then
+  if vastai show user --raw 2>/dev/null | uv run python -c "import sys,json; d=json.load(sys.stdin); print('OK  Vast user:', d.get('email','?'), 'credit:', d.get('credit','?'))" 2>/dev/null; then
     :
   else
     die "vastai auth failed — check VAST_API_KEY"

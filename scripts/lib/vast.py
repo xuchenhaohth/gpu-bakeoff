@@ -79,7 +79,7 @@ def read_yaml(path: Path) -> dict[str, Any]:
     try:
         import yaml
     except ImportError:
-        raise SystemExit("Install PyYAML: pip install pyyaml") from None
+        raise SystemExit("Install PyYAML: uv sync") from None
     return yaml.safe_load(path.read_text()) or {}
 
 
@@ -87,7 +87,7 @@ def write_yaml(path: Path, data: dict[str, Any]) -> None:
     try:
         import yaml
     except ImportError:
-        raise SystemExit("Install PyYAML: pip install pyyaml") from None
+        raise SystemExit("Install PyYAML: uv sync") from None
     path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
 
 

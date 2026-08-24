@@ -29,8 +29,8 @@ Non-gated but required downloads:
 
 ```bash
 source .env  # or export HF_TOKEN
-pip install huggingface_hub
-python3 -c "from huggingface_hub import HfApi; print(HfApi().whoami(token='$HF_TOKEN'))"
+uv sync
+uv run python -c "from huggingface_hub import HfApi; print(HfApi().whoami(token='$HF_TOKEN'))"
 ```
 
 ## Remote verify (after instance running)

@@ -10,14 +10,21 @@ nvidia-smi || { echo "No GPU"; exit 1; }
 export DEBIAN_FRONTEND=noninteractive
 if command -v apt-get >/dev/null 2>&1; then
   apt-get update -qq
-  apt-get install -y -qq git curl wget python3-venv python3-pip procps build-essential >/dev/null 2>&1 || true
+  apt-get install -y -qq git curl wget python3 procps build-essential >/dev/null 2>&1 || true
 fi
 
-python3 -m venv .venv
+export PATH="${HOME}/.local/bin:${PATH}"
+if ! command -v uv >/dev/null 2>&1; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  # shellcheck disable=SC1091
+  source "${HOME}/.local/bin/env" 2>/dev/null || true
+  export PATH="${HOME}/.local/bin:${PATH}"
+fi
+
+uv venv .venv
 # shellcheck disable=SC1091
 source .venv/bin/activate
-pip install -q --upgrade pip wheel
-pip install -q pyyaml requests huggingface_hub psutil
+uv pip install -q pyyaml requests huggingface_hub psutil
 
 if [[ -f "$BAKEOFF_ROOT/install_stack.sh" ]]; then
   bash "$BAKEOFF_ROOT/install_stack.sh" || echo "WARN: install_stack partial failure"
@@ -55,7 +62,7 @@ for cmd, key in [
     except Exception:
         pass
 try:
-    env["pip_freeze"] = subprocess.check_output(["pip", "freeze"], text=True).strip().split("\n")
+    env["pip_freeze"] = subprocess.check_output(["uv", "pip", "freeze"], text=True).strip().split("\n")
 except Exception:
     pass
 open("results/environment.json", "w").write(json.dumps(env, indent=2))

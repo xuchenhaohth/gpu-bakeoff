@@ -37,7 +37,7 @@
 ## How to refresh
 
 ```bash
-python3 scripts/remote/report.py --csv results/matrix.csv --update-docs
+uv run python scripts/remote/report.py --csv results/matrix.csv --update-docs
 ```
 
 Or paste summary tables from `results/report.html`.
