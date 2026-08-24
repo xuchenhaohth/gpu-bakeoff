@@ -1,0 +1,107 @@
+# Hugging Face model registry for the bake-off.
+# Accept gated licenses in the browser before prefetch.
+
+models:
+  minimax_h3:
+    hf_id: MiniMaxAI/MiniMax-H3
+    license: open
+    gated: true
+    runtime: comfyui
+    workflow: minimax_h3
+    comfyui_nodes:
+      - https://github.com/Lightricks/ComfyUI-LTXVideo.git
+    disk_gb: 45
+    layer_a:
+      precision: int8_nvfp4
+      notes: pruned INT8 + NVFP4 AWQ (~42.5 GB on disk)
+    layer_b:
+      skip: true
+
+  ltx_25:
+    hf_id: Lightricks/LTX-2.5
+    license: open
+    gated: true
+    runtime: comfyui
+    workflow: ltx_25
+    comfyui_nodes:
+      - https://github.com/Lightricks/ComfyUI-LTXVideo.git
+    disk_gb: 80
+    layer_a:
+      precision: int8_distilled
+      file_hint: ltx-2.5-22b-distilled-transformer-int8.safetensors
+    layer_b:
+      precision: bf16_distilled
+      sku_filter: pro6000_1x
+
+  ideogram_4:
+    hf_id: ideogram-ai/ideogram-4-nf4
+    license: non_commercial
+    gated: true
+    runtime: comfyui
+    workflow: ideogram_4
+    disk_gb: 15
+    layer_a:
+      precision: nf4
+    layer_b:
+      skip: true
+    boss_note: Internal test only — not for production on open weights.
+
+  hunyuan_image_3:
+    hf_id: EricRollei/HunyuanImage-3-NF4-v2
+    license: open
+    gated: false
+    runtime: comfyui
+    workflow: hunyuan_image_3
+    comfyui_nodes:
+      - https://github.com/kijai/ComfyUI-HunyuanImage-3.git
+    disk_gb: 50
+    layer_a:
+      precision: nf4
+      block_swap: auto
+      min_host_ram_gb: 128
+    layer_b:
+      precision: int8_or_bf16
+      sku_filter: pro6000_1x
+
+  flux2_dev:
+    hf_id: black-forest-labs/FLUX.2-dev
+    license: open
+    gated: true
+    runtime: comfyui
+    workflow: flux2_dev
+    disk_gb: 25
+    layer_a:
+      precision: fp8
+    layer_b:
+      precision: fp16
+      sku_filter: pro6000_1x
+
+  qwen38_27b:
+    hf_id: Qwen/Qwen3.8-27B
+    license: apache-2.0
+    gated: false
+    runtime: vllm
+    disk_gb: 55
+    layer_a:
+      precision: nvfp4
+      checkpoint: RadixArk/Qwen3.8-27B-NVFP4
+    layer_b:
+      precision: bf16
+      sku_filter: pro6000_1x
+
+  deepseek_v4_flash:
+    hf_id: prometheusAIR/DeepSeek-V4-Flash-0731-GGUF
+    license: mit
+    gated: false
+    runtime: llama_cpp
+    disk_gb: 120
+    layer_a:
+      precision: iq2_xxs
+      file_hint: DeepSeek-V4-Flash-0731-IQ2_XXS
+    layer_b:
+      precision: native_vllm_fp8
+      sku_filter: pro6000_2x
+      optional: true
+    skip_skus:
+      - rtx5090_1x
+      - rtx5090_2x

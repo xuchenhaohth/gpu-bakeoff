@@ -1,0 +1,110 @@
+# GPU SKUs mapped to AU purchase tiers and test layers.
+
+skus:
+  rtx5090_1x:
+    label: bakeoff-5090
+    tier: "1b"
+    purchase: "RTX 5090 workstation (~A$10–13k)"
+    num_gpus: 1
+    gpu_ram_gb: 32
+    min_cpu_ram_gb: 128
+    arch: x86_64
+    compute_cap: "120"
+    image: vastai/pytorch:@vastai-automatic-tag
+
+  rtx5090_2x:
+    label: bakeoff-5090x2
+    tier: evidence
+    purchase: "2×5090 — NOT 64 GB pooled VRAM"
+    num_gpus: 2
+    gpu_ram_gb: 32
+    min_cpu_ram_gb: 128
+    arch: x86_64
+    compute_cap: "120"
+    image: vastai/pytorch:@vastai-automatic-tag
+    note: Two 32 GB cards; sharding required for >32 GB weights.
+
+  pro6000_1x:
+    label: bakeoff-pro6000
+    tier: "2"
+    purchase: "1× RTX PRO 6000 workstation (~A$26–33k)"
+    num_gpus: 1
+    gpu_ram_gb: 96
+    min_cpu_ram_gb: 256
+    arch: x86_64
+    compute_cap: "120"
+    image: vastai/pytorch:@vastai-automatic-tag
+    layer_b: true
+
+  pro6000_2x:
+    label: bakeoff-pro6000x2
+    tier: "3"
+    purchase: "2× RTX PRO 6000 (~A$50–70k)"
+    num_gpus: 2
+    gpu_ram_gb: 96
+    min_cpu_ram_gb: 256
+    arch: x86_64
+    compute_cap: "120"
+    image: vastai/pytorch:@vastai-automatic-tag
+
+  dgx_spark_gb10:
+    label: bakeoff-spark
+    tier: "1"
+    purchase: "DGX Spark / GX10 (~A$6–9k)"
+    num_gpus: 1
+    gpu_ram_gb: 128
+    min_cpu_ram_gb: 128
+    arch: aarch64
+    compute_cap: "121"
+    memory_type: unified
+    image: null  # filled by 01_search_offers.py from offer metadata
+
+# Fixed prompts — same across all GPUs
+prompts:
+  image:
+    - id: img01
+      text: "Professional product photo of a red coffee mug on white marble, soft studio lighting, 1024x1024"
+    - id: img02
+      text: "Office team collaborating around a laptop, modern Sydney workspace, natural light, photorealistic"
+    - id: img03
+      text: "Event hire warehouse with stacked chairs and tables, wide angle, clean catalog style"
+
+  video:
+    - id: vid01
+      text: "Slow cinematic pan across a decorated wedding marquee at golden hour, gentle ambient audio"
+      reference_image: assets/ref_frame.jpg
+      duration_sec: 5
+
+  llm:
+    short:
+      id: llm_short
+      input_tokens: 1024
+      output_tokens: 128
+      system: "You are a helpful coding assistant for Harry the Hirer IT staff."
+      user: "Write a Python function that validates Australian phone numbers and returns E.164 format."
+    long:
+      id: llm_long
+      input_tokens: 8192
+      output_tokens: 512
+      system: "You are a helpful coding assistant."
+      user_file: assets/llm_long_prompt.txt
+
+  llm_smoke:
+    - id: smoke_json
+      expect: json_tool_call
+    - id: smoke_code
+      expect: python_compiles
+
+# Test protocol
+protocol:
+  image_warmup: 1
+  image_timed: 2
+  image_resolution: "1024x1024"
+  video_warmup: 1
+  video_timed: 1
+  llm_concurrency: 1
+  sampler_interval_sec: 1.5
+  slow_thresholds:
+    image_sec: 120
+    video_factor: 60
+    llm_decode_tps: 5

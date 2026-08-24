@@ -1,0 +1,21 @@
+# Reference schema only — `01_search_offers.py` writes `config/offers.yaml` at runtime.
+# Do not hand-edit offer ids unless re-searching.
+
+generated_at: null
+skus:
+  rtx5090_1x:
+    search_query: "num_gpus=1 gpu_ram>=31 gpu_ram<=33 verified=true rentable=true direct_port_count>=1 cpu_ram>=128 reliability>=0.98"
+    candidates: []
+  rtx5090_2x:
+    search_query: "num_gpus=2 gpu_ram>=31 gpu_ram<=33 verified=true rentable=true direct_port_count>=1 cpu_ram>=128 reliability>=0.98"
+    candidates: []
+  pro6000_1x:
+    search_query: "num_gpus=1 gpu_ram>=90 gpu_ram<=100 verified=true rentable=true direct_port_count>=1 cpu_ram>=256 reliability>=0.98"
+    candidates: []
+  pro6000_2x:
+    search_query: "num_gpus=2 gpu_ram>=90 gpu_ram<=100 verified=true rentable=true direct_port_count>=1 cpu_ram>=256 reliability>=0.98"
+    candidates: []
+  dgx_spark_gb10:
+    search_query: "gpu_ram>=120 verified=true rentable=true direct_port_count>=1"
+    candidates: []
+    note: Filter gpu_name for GB10/Spark in post-processing

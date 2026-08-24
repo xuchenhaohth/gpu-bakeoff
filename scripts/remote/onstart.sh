@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Remote bootstrap on Vast instance — run from /workspace/bakeoff
+set -euo pipefail
+cd "$(dirname "$0")"
+BAKEOFF_ROOT="$(pwd)"
+
+echo "== bakeoff onstart =="
+nvidia-smi || { echo "No GPU"; exit 1; }
+
+export DEBIAN_FRONTEND=noninteractive
+if command -v apt-get >/dev/null 2>&1; then
+  apt-get update -qq
+  apt-get install -y -qq git curl wget python3-venv python3-pip procps build-essential >/dev/null 2>&1 || true
+fi
+
+python3 -m venv .venv
+# shellcheck disable=SC1091
+source .venv/bin/activate
+pip install -q --upgrade pip wheel
+pip install -q pyyaml requests huggingface_hub psutil
+
+if [[ -f "$BAKEOFF_ROOT/install_stack.sh" ]]; then
+  bash "$BAKEOFF_ROOT/install_stack.sh" || echo "WARN: install_stack partial failure"
+fi
+
+if [[ -n "${HF_TOKEN:-}" ]]; then
+  huggingface-cli login --token "$HF_TOKEN" --add-to-git-credential 2>/dev/null || \
+    python3 -c "from huggingface_hub import login; login(token='$HF_TOKEN')"
+fi
+
+mkdir -p results artifacts config assets
+python3 - <<'PY'
+import json, subprocess, platform
+from datetime import datetime, timezone
+env = {
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+    "platform": platform.platform(),
+    "python": platform.python_version(),
+    "sku": __import__("os").environ.get("BAKEOFF_SKU", "unknown"),
+}
+try:
+    out = subprocess.check_output(
+        ["nvidia-smi", "--query-gpu=name,driver_version,memory.total,power.limit", "--format=csv,noheader"],
+        text=True,
+    )
+    env["gpus"] = [l.strip() for l in out.strip().split("\n") if l.strip()]
+except Exception as e:
+    env["gpu_error"] = str(e)
+for cmd, key in [
+    (["vllm", "--version"], "vllm_version"),
+    (["llama-server", "--version"], "llama_server_version"),
+]:
+    try:
+        env[key] = subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT).strip()
+    except Exception:
+        pass
+try:
+    env["pip_freeze"] = subprocess.check_output(["pip", "freeze"], text=True).strip().split("\n")
+except Exception:
+    pass
+open("results/environment.json", "w").write(json.dumps(env, indent=2))
+print("Wrote results/environment.json")
+PY
+
+echo "== onstart complete =="
+python3 prefetch_models.py || echo "WARN: prefetch partial failure — check HF_TOKEN and licenses"
