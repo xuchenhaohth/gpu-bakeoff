@@ -11,6 +11,32 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
+_SSH_PUBKEYS = (
+    Path.home() / ".ssh" / "id_ed25519.pub",
+    Path.home() / ".ssh" / "id_rsa.pub",
+)
+_SSH_BATCH_DIR = Path(__file__).resolve().parent / "ssh_batchmode"
+
+
+def local_ssh_pubkey() -> Path | None:
+    for path in _SSH_PUBKEYS:
+        if path.is_file():
+            return path
+    return None
+
+
+def local_ssh_identity() -> Path | None:
+    pub = local_ssh_pubkey()
+    if pub is None:
+        return None
+    identity = pub.with_suffix("")
+    return identity if identity.is_file() else None
+
+
+def _copy_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PATH"] = f"{_SSH_BATCH_DIR}{os.pathsep}{env.get('PATH', '')}"
+    return env
 
 
 def normalize_vast_list(raw: Any, nested_key: str | None = None) -> list[dict[str, Any]]:
@@ -86,8 +112,35 @@ def vastai(*args: str, check: bool = True) -> Any:
 
 
 def vastai_copy(src: str, dst: str, check: bool = True) -> None:
-    proc = subprocess.run(_vastai_cmd("copy", src, dst, raw=False), capture_output=True, text=True)
-    if proc.returncode != 0 and check:
+    from lib.execute_transfer import copy_via_execute, execute_copy_enabled
+
+    if execute_copy_enabled():
+        copy_via_execute(src, dst)
+        return
+
+    args: list[str] = ["copy", src, dst]
+    identity = local_ssh_identity()
+    if identity is not None:
+        args.extend(["--identity", str(identity)])
+    proc = subprocess.run(
+        _vastai_cmd(*args, raw=False),
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        env=_copy_env(),
+    )
+    if proc.returncode == 0:
+        return
+    lowered = f"{proc.stderr}\n{proc.stdout}".lower()
+    if any(
+        token in lowered
+        for token in ("permission denied", "password", "authentication failed", "publickey")
+    ):
+        print("SSH copy failed (Vast has no VM password); falling back to execute transfer")
+        os.environ["VAST_COPY_VIA_EXECUTE"] = "1"
+        copy_via_execute(src, dst)
+        return
+    if check:
         raise RuntimeError(
             f"vastai copy failed ({proc.returncode}): {src} -> {dst}\n"
             f"stderr: {proc.stderr}\nstdout: {proc.stdout}"

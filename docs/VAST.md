@@ -31,6 +31,22 @@ Spend cap in `.env`: `MAX_USD=180`. The bake-off script refuses if projected ser
 
 All orchestrator scripts read `VAST_API_KEY` from `.env` and pass `--api-key` to every `vastai` call (including `copy` and `execute`).
 
+**SSH:** There is no instance password. `vastai copy` authenticates as `vastai_<account>@<proxy>` using **account** SSH keys.
+
+Team API keys cannot store SSH keys (`Team SSH keys are not supported`). In that case the orchestrator copies the harness and results through `vastai execute` instead of rsync.
+
+If you are on a personal account, register the local pubkey **before** launch:
+
+```bash
+vastai create ssh-key "$(cat ~/.ssh/id_ed25519.pub)"
+```
+
+Or paste the pubkey at https://cloud.vast.ai/manage-keys/ (personal context). For an instance created before the key was registered:
+
+```bash
+vastai attach ssh <INSTANCE_ID> ~/.ssh/id_ed25519.pub
+```
+
 ## Instance lifecycle
 
 Poll `vastai show instance <id> --raw`:
@@ -84,6 +100,8 @@ State is saved to `config/instances.json` immediately after resolve/launch so `-
 vastai copy local:./scripts/remote/ <INSTANCE_ID>:/workspace/bakeoff/
 ```
 
+The orchestrator tries rsync with `--identity` and SSH `BatchMode` (fails instead of prompting for a password). If the account has no SSH keys (typical for **team** API keys), it copies via `vastai execute`.
+
 **Never** copy to `/root` or `/` — breaks SSH on some hosts.
 
 ## Images
@@ -119,6 +137,7 @@ If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 | `Insufficient credits` | Top up billing |
 | Repeated `loading` during wait | Normal image pull / container start — watch `status_msg` and elapsed time in wait log; timeout is `WAIT_TIMEOUT_SEC` (25 min) then backup offer |
 | SSH timeout | Wait longer or destroy and pick higher `reliability` offer |
+| `vastai_kaalia@…'s password:` | No password exists. Team API keys cannot register SSH keys — re-run bakeoff (copy falls back to `vastai execute`). On a personal account: `vastai create ssh-key "$(cat ~/.ssh/id_ed25519.pub)"` then `vastai attach ssh <id> ~/.ssh/id_ed25519.pub` |
 | CUDA / sm_120 errors | Wrong image or driver on host — next candidate |
 | OOM on Hunyuan | Check **host RAM** in CSV, not just VRAM |
 | Interrupted run still billing | `uv run python scripts/02_run_bakeoff.py --destroy-only` |

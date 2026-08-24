@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from lib.ssh_preflight import attach_instance_ssh
 from lib.vast import ROOT, vastai_copy, vastai_execute
 
 REMOTE_DIR = ROOT / "scripts" / "remote"
@@ -28,6 +29,7 @@ def copy_to(instance_id: int, local: Path, remote: str) -> None:
 
 def push_and_run(instance_id: int, sku_id: str = "") -> None:
     label = f" ({sku_id})" if sku_id else ""
+    attach_instance_ssh(instance_id)
     copy_to(instance_id, REMOTE_DIR, "/workspace/bakeoff/")
     copy_to(instance_id, CONFIG_DIR, "/workspace/bakeoff/config/")
     print(f"Execute on {instance_id}{label}: {MATRIX_START_CMD[:80]}...")

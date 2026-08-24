@@ -1,0 +1,16 @@
+#!/bin/sh
+# Used on PATH by vastai copy so rsync/ssh cannot hang on a password prompt.
+# Vast has no VM password — copy authenticates with the account SSH key.
+if [ -x /usr/bin/ssh ]; then
+  SSH=/usr/bin/ssh
+elif [ -x /bin/ssh ]; then
+  SSH=/bin/ssh
+else
+  echo "ssh_batchmode: system ssh not found" >&2
+  exit 127
+fi
+exec "$SSH" \
+  -o BatchMode=yes \
+  -o PreferredAuthentications=publickey \
+  -o PasswordAuthentication=no \
+  "$@"

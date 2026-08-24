@@ -34,15 +34,17 @@ else
   die "uv not found — curl -LsSf https://astral.sh/uv/install.sh | sh"
 fi
 
-# SSH key
+# SSH key — required; Vast has no VM password
+PUB=""
 for k in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_rsa.pub"; do
   if [[ -f "$k" ]]; then
+    PUB="$k"
     echo "OK  SSH public key: $k"
     break
   fi
 done
-if [[ ! -f "${k:-}" ]]; then
-  warn "No SSH public key found — run: ssh-keygen -t ed25519 && vastai create ssh-key ~/.ssh/id_ed25519.pub"
+if [[ -z "$PUB" ]]; then
+  warn "No SSH public key — team accounts copy via execute; personal: ssh-keygen -t ed25519 && vastai create ssh-key \"$(cat ~/.ssh/id_ed25519.pub)\""
 fi
 
 # API key auth
@@ -60,6 +62,14 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
   warn "HF_TOKEN empty — gated models will fail prefetch"
 else
   echo "OK  HF_TOKEN set (${#HF_TOKEN} chars)"
+fi
+
+if [[ "$fail" -eq 0 ]]; then
+  if PYTHONPATH="$ROOT/scripts" uv run python -c "from lib.vast import load_dotenv; from lib.ssh_preflight import ensure_ssh_ready; load_dotenv(); ensure_ssh_ready()"; then
+    :
+  else
+    die "SSH preflight failed"
+  fi
 fi
 
 MAX="${MAX_USD:-180}"

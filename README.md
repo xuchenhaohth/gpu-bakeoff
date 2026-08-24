@@ -11,7 +11,7 @@ Serial **Vast.ai** evidence run for a boss-facing hardware × model fit matrix. 
 3. Hugging Face token with **gated licenses accepted** for Ideogram 4, MiniMax H3, FLUX.2-dev.
 4. [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
 5. `vastai` CLI installed (see below).
-6. SSH key at `~/.ssh/id_ed25519.pub` (or ed25519 equivalent).
+6. SSH key at `~/.ssh/id_ed25519.pub`. Personal accounts: register with `vastai create ssh-key`. Team API keys cannot store SSH keys — the orchestrator copies files via `vastai execute` instead. Vast has no VM password.
 
 ## One-time setup
 
@@ -25,7 +25,7 @@ cp .env.example .env
 # or: curl -fsSL https://vast.ai/install.sh | bash
 
 vastai set api-key "$VAST_API_KEY"
-vastai create ssh-key ~/.ssh/id_ed25519.pub
+vastai create ssh-key "$(cat ~/.ssh/id_ed25519.pub)"
 
 uv sync   # local orchestrator + dev tools
 ./scripts/00_check_env.sh

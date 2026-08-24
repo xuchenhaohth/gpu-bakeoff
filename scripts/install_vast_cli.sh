@@ -6,4 +6,4 @@ if command -v vastai >/dev/null 2>&1; then
   exit 0
 fi
 curl -fsSL https://vast.ai/install.sh | bash
-echo "Installed. Next: vastai set api-key <KEY> && vastai create ssh-key ~/.ssh/id_ed25519.pub"
+echo "Installed. Next: vastai set api-key <KEY> && vastai create ssh-key \"\$(cat ~/.ssh/id_ed25519.pub)\""

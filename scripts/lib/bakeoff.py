@@ -16,6 +16,7 @@ from lib.instance_lifecycle import (
 from lib.matrix_poll import wait_for_matrix
 from lib.pull_results import merge_results, pull_sku
 from lib.push_and_run import push_and_run
+from lib.ssh_preflight import ensure_ssh_ready
 from lib.vast import ROOT, read_yaml, save_instances, vastai
 from lib.wait_running import wait_until_running
 
@@ -103,6 +104,7 @@ def run_serial() -> int:
     offers = read_yaml(OFFERS_PATH)
     matrix = read_yaml(MATRIX_PATH)
     matrix_skus = matrix.get("skus", {})
+    ensure_ssh_ready()
     spend_check(offers)
 
     state = reconcile_bakeoff_instances(matrix_skus)
