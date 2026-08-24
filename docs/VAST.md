@@ -73,9 +73,19 @@ vastai copy local:./scripts/remote/ <INSTANCE_ID>:/workspace/bakeoff/
 | x86_64 (5090, PRO 6000) | `vastai/pytorch:@vastai-automatic-tag` |
 | aarch64 (GB10 Spark) | From offer `image` field captured by `01_search_offers.py` — launch fails fast if missing |
 
+## GB10 / Spark search
+
+Vast lists GB10 hosts as `gpu_name=GB10` with `cpu_arch=arm64` (~119 GB VRAM). The CLI filter `gpu_name=GB10` often returns **zero** results (indexing quirk), so `01_search_offers.py` searches:
+
+```text
+cpu_arch=arm64 num_gpus=1 gpu_ram>=115 gpu_ram<=125 verified=true rentable=true direct_port_count>=1
+```
+
+then post-filters to GB10/Spark names. Use `--debug-spark` to see why offers drop.
+
 ## GB10 / Spark fallback
 
-If `01_search_offers.py` finds zero GB10 offers:
+If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 
 1. Spark column in matrix = `no rental today`
 2. Footnote Enverge Spark Cloud (~US$0.75/hr) as manual option

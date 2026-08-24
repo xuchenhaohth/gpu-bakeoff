@@ -12,11 +12,12 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from lib.launch_instance import launch_one  # noqa: E402
+from lib.sku_offers import validate_offer  # noqa: E402
 from lib.vast import load_dotenv, read_yaml, save_instances, vastai  # noqa: E402
 
 OFFERS_PATH = ROOT / "config" / "offers.yaml"
 MATRIX_PATH = ROOT / "config" / "matrix.yaml"
-DISK_GB = int(os.environ.get("DISK_GB", "400"))
 RUN_HOURS = 24
 
 
@@ -47,59 +48,21 @@ def spend_check(offers: dict[str, Any]) -> None:
         raise SystemExit(f"Projected spend ${projected:.2f} exceeds MAX_USD={max_usd}")
 
 
-def resolve_image(sku_id: str, offer: dict, sku_meta: dict) -> str:
-    arch = sku_meta.get("arch") or offer.get("cpu_arch") or "x86_64"
-    image = sku_meta.get("image") or offer.get("image")
-    if not image:
-        if arch == "aarch64":
-            raise SystemExit(
-                f"No container image for aarch64 SKU {sku_id} — "
-                "re-run 01_search_offers.py or set image in matrix.yaml"
-            )
-        image = "vastai/pytorch:@vastai-automatic-tag"
-    return image
-
-
-def launch_one(sku_id: str, offer: dict, sku_meta: dict) -> dict | None:
-    offer_id = offer["id"]
-    label = sku_meta.get("label") or f"bakeoff-{sku_id}"
-    image = resolve_image(sku_id, offer, sku_meta)
-
-    hf = os.environ.get("HF_TOKEN", "")
-    tz = os.environ.get("TZ", "Australia/Melbourne")
-    env_str = f"-e HF_TOKEN={hf} -e TZ={tz} -e BAKEOFF_SKU={sku_id}"
-
-    print(f"Launching {sku_id} offer={offer_id} label={label} image={image}")
-    result = vastai(
-        "create",
-        "instance",
-        str(offer_id),
-        "--image",
-        image,
-        "--disk",
-        str(DISK_GB),
-        "--ssh",
-        "--direct",
-        "--label",
-        label,
-        "--env",
-        env_str,
-    )
-    if isinstance(result, dict) and result.get("success"):
-        iid = result.get("new_contract") or result.get("id")
-        print(f"  -> instance id {iid}")
-        return {
-            "sku_id": sku_id,
-            "instance_id": iid,
-            "offer_id": offer_id,
-            "label": label,
-            "image": image,
-            "dph_total": offer.get("dph_total"),
-            "gpu_name": offer.get("gpu_name"),
-            "status": "created",
-        }
-    print(f"  FAILED: {result}")
-    return None
+def launch_first_valid(
+    sku_id: str,
+    candidates: list[dict[str, Any]],
+    sku_meta: dict[str, Any],
+) -> tuple[dict[str, Any] | None, list[Any]]:
+    for i, offer in enumerate(candidates):
+        err = validate_offer(sku_id, offer, sku_meta)
+        if err:
+            print(f"  skip candidate {offer.get('id')}: {err}")
+            continue
+        rec = launch_one(sku_id, offer, sku_meta)
+        if rec:
+            backup_ids = [c["id"] for c in candidates[i + 1 : i + 4]]
+            return rec, backup_ids
+    return None, []
 
 
 def main() -> int:
@@ -123,10 +86,11 @@ def main() -> int:
             else:
                 raise SystemExit(f"No candidates for {sku_id}")
             continue
-        rec = launch_one(sku_id, cands[0], sku_meta)
-        if rec:
-            rec["backup_offer_ids"] = [c["id"] for c in cands[1:4]]
-            state["instances"][sku_id] = rec
+        rec, backup_ids = launch_first_valid(sku_id, cands, sku_meta)
+        if not rec:
+            raise SystemExit(f"All candidates failed validation or launch for {sku_id}")
+        rec["backup_offer_ids"] = backup_ids
+        state["instances"][sku_id] = rec
 
     save_instances(state)
     print(f"Saved {ROOT / 'config' / 'instances.json'}")
