@@ -12,6 +12,7 @@ from workflow_loader import inject_params, load_workflow
 
 COMFY_PORT = int(__import__("os").environ.get("COMFY_PORT", "8188"))
 COMFY_DIR = Path("/workspace/ComfyUI")
+COMFY_LOG = Path("/workspace/bakeoff/comfy.log")
 
 
 def start_comfy(background: bool = True) -> None:
@@ -21,10 +22,12 @@ def start_comfy(background: bool = True) -> None:
     if not comfy.exists():
         return
     if background:
+        COMFY_LOG.parent.mkdir(parents=True, exist_ok=True)
+        log_fh = COMFY_LOG.open("a", encoding="utf-8")
         subprocess.Popen(
             ["python3", str(comfy), "--listen", "0.0.0.0", "--port", str(COMFY_PORT)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
         )
         for _ in range(60):
             if comfy_api.server_up():

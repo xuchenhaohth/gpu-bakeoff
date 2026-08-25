@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -355,6 +356,15 @@ def ssh_pull_dir(
         )
 
 
+def prepare_local_file_dest(local_file: Path) -> Path:
+    """Ensure local path is a file target (remove stale directory from bad live pulls)."""
+    local_path = local_file.resolve()
+    if local_path.is_dir():
+        shutil.rmtree(local_path)
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    return local_path
+
+
 def ssh_pull_file(
     instance_id: int,
     remote_file: str,
@@ -364,8 +374,7 @@ def ssh_pull_file(
     required: bool = True,
 ) -> None:
     """Pull a single remote file over SSH."""
-    local_path = local_file.resolve()
-    local_path.parent.mkdir(parents=True, exist_ok=True)
+    local_path = prepare_local_file_dest(local_file)
 
     identity, user, host, port = _ssh_connection(instance_id)
     quoted = shlex.quote(remote_file)

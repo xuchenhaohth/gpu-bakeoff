@@ -102,8 +102,11 @@ def pull_sku(instance_id: int, sku_id: str) -> None:
         is_dir=True,
         required=False,
     )
-    pull_remote_ssh(instance_id, RUN_LOG_REMOTE, sku_dir / "run.log", is_dir=False, required=False)
     verify_sku_matrix(RESULTS, sku_id)
+    try:
+        pull_remote_ssh(instance_id, RUN_LOG_REMOTE, sku_dir / "run.log", is_dir=False, required=False)
+    except Exception as exc:
+        print(f"  {sku_id}: optional run.log pull failed: {exc}")
 
 
 def pull_run_log_best_effort(instance_id: int, sku_id: str) -> None:

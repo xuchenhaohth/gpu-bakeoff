@@ -16,6 +16,34 @@ try:
 except ImportError:
     psutil = None
 
+_NA_VALUES = frozenset({"", "n/a", "[n/a]", "[not supported]"})
+
+
+def _smi_float(value: str) -> float:
+    """Parse nvidia-smi CSV field; GB10 unified memory may report [N/A]."""
+    token = value.strip()
+    if not token or token.lower() in _NA_VALUES:
+        return 0.0
+    try:
+        return float(token)
+    except ValueError:
+        return 0.0
+
+
+def _parse_gpu_smi_row(parts: list[str]) -> dict | None:
+    if len(parts) < 4:
+        return None
+    try:
+        gpu_index = int(parts[0].strip())
+    except ValueError:
+        return None
+    return {
+        "gpu_index": gpu_index,
+        "vram_mib": _smi_float(parts[1]),
+        "power_w": _smi_float(parts[2]),
+        "temp_c": _smi_float(parts[3]),
+    }
+
 
 @dataclass
 class SamplePeak:
@@ -54,15 +82,9 @@ class Sampler:
         rows = []
         for line in out.strip().splitlines():
             parts = [p.strip() for p in line.split(",")]
-            if len(parts) >= 4:
-                rows.append(
-                    {
-                        "gpu_index": int(parts[0]),
-                        "vram_mib": float(parts[1]),
-                        "power_w": float(parts[2]) if parts[2] not in ("N/A", "[Not Supported]") else 0.0,
-                        "temp_c": float(parts[3]) if parts[3] not in ("N/A",) else 0.0,
-                    }
-                )
+            row = _parse_gpu_smi_row(parts)
+            if row is not None:
+                rows.append(row)
         return rows
 
     def _host_ram_gb(self) -> tuple[float, float]:

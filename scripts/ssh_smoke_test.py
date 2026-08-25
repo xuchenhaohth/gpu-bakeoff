@@ -155,7 +155,7 @@ def run_smoke(rec: dict[str, Any], sku_id: str, *, push_harness_flag: bool = Fal
     print(f"SSH smoke test OK — instance {iid} user={user}")
 
     if push_harness_flag:
-        push_harness(iid)
+        push_harness(iid, sku_id=sku_id)
         print(f"Harness push verified on instance {iid}")
 
     return 0

@@ -10,6 +10,13 @@ python3 progress.py --phase onstart --message bootstrap
 # shellcheck disable=SC1091
 source "$BAKEOFF_ROOT/load_hf_env.sh"
 
+if [[ -f "$BAKEOFF_ROOT/.env.sku" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$BAKEOFF_ROOT/.env.sku"
+  set +a
+fi
+
 echo "== bakeoff onstart =="
 nvidia-smi || { echo "No GPU"; exit 1; }
 

@@ -26,6 +26,7 @@ from lib.ssh_remote import (
     is_ssh_auth_denied,
     is_ssh_retryable,
     parse_ssh_url,
+    prepare_local_file_dest,
 )
 from lib.vast import vast_cli_error
 
@@ -344,6 +345,36 @@ class UploadPathTests(unittest.TestCase):
         from upload_results import MATRIX_CSV, path_in_repo  # noqa: PLC0415
 
         self.assertEqual(path_in_repo("rtx5090_1x", MATRIX_CSV), "rtx5090_1x/matrix.csv")
+
+
+class SamplerSmiTests(unittest.TestCase):
+    def test_na_fields_parse_as_zero(self) -> None:
+        import sys
+
+        remote = Path(__file__).resolve().parent / "remote"
+        sys.path.insert(0, str(remote))
+        from sampler import _parse_gpu_smi_row, _smi_float  # noqa: PLC0415
+
+        self.assertEqual(_smi_float("[N/A]"), 0.0)
+        self.assertEqual(_smi_float("N/A"), 0.0)
+        self.assertEqual(_smi_float("[Not Supported]"), 0.0)
+        row = _parse_gpu_smi_row(["0", "[N/A]", "N/A", "N/A"])
+        assert row is not None
+        self.assertEqual(row["vram_mib"], 0.0)
+        self.assertEqual(row["power_w"], 0.0)
+        self.assertEqual(row["temp_c"], 0.0)
+
+
+class PrepareLocalFileDestTests(unittest.TestCase):
+    def test_replaces_directory_with_file_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "run.log"
+            dest.mkdir()
+            prepared = prepare_local_file_dest(dest)
+            self.assertFalse(prepared.is_dir())
+            prepared.write_bytes(b"log")
+            self.assertTrue(prepared.is_file())
+            self.assertEqual(prepared.read_bytes(), b"log")
 
 
 if __name__ == "__main__":

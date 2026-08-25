@@ -12,6 +12,13 @@ mkdir -p "$BAKEOFF_ROOT/results"
 # shellcheck disable=SC1091
 source "$BAKEOFF_ROOT/load_hf_env.sh"
 
+if [[ -f "$BAKEOFF_ROOT/.env.sku" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$BAKEOFF_ROOT/.env.sku"
+  set +a
+fi
+
 if [[ -f "$PID_FILE" ]]; then
   old_pid="$(cat "$PID_FILE")"
   if kill -0 "$old_pid" 2>/dev/null; then
