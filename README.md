@@ -45,7 +45,7 @@ uv run python scripts/dry_run_local.py
 | Check env | `./scripts/00_check_env.sh` |
 | Discover offers | `uv run python scripts/01_search_offers.py` |
 | Serial bake-off (one SKU at a time) | `uv run python scripts/02_run_bakeoff.py` |
-| Boss pack | `uv run python scripts/fill_boss_pack.py` then review `docs/BOSS_PACK.md` |
+| Boss pack | `uv run python scripts/fill_boss_pack.py` then review `docs/procurement/BOSS_PACK.md` |
 
 `02_run_bakeoff.py` runs the full per-SKU lifecycle: reconcile stale instances → launch or reuse → wait → matrix → pull → destroy, then moves to the next SKU. Each SKU can run up to `MATRIX_TIMEOUT_SEC` (default 8 h). Console output shows transport, install sub-steps (`pip_comfyui`, etc.), `(unchanged Nm)` during long pip, and matrix job index — see [docs/VAST.md](docs/VAST.md).
 
@@ -63,7 +63,7 @@ uv run python scripts/dry_run_local.py
 | `results/report.html` | Gallery + summary tables |
 | `results/artifacts/` | PNG/MP4 samples (gitignored bulk) |
 | `docs/FIT_MATRIX.md` | Human-readable matrix (auto-updated by pull step) |
-| `docs/BOSS_PACK.md` | One-pager for management |
+| `docs/procurement/BOSS_PACK.md` | One-pager for management |
 
 Dry-run writes to `scripts/remote/results/` only (cleaned up automatically).
 
@@ -90,4 +90,4 @@ Dry-run writes to `scripts/remote/results/` only (cleaned up automatically).
 - Models & licenses: [docs/MODELS.md](docs/MODELS.md)
 - HF gated access: [docs/HF_ACCESS.md](docs/HF_ACCESS.md)
 - Stack versions: [docs/STACK.md](docs/STACK.md)
-- AU purchase quotes: [docs/AU_QUOTES.md](docs/AU_QUOTES.md)
+- AU purchase quotes: [docs/procurement/AU_QUOTES.md](docs/procurement/AU_QUOTES.md) (Confluence: [docs/procurement/CONFLUENCE.md](docs/procurement/CONFLUENCE.md))

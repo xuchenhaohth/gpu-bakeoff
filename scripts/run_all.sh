@@ -24,4 +24,4 @@ uv run python scripts/fill_boss_pack.py
 DESTROYED=1
 
 echo ""
-echo "Done. Open results/report.html and complete docs/BOSS_PACK.md"
+echo "Done. Open results/report.html and complete docs/procurement/BOSS_PACK.md"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge results into docs/BOSS_PACK.md executive summary placeholders."""
+"""Merge results into docs/procurement/BOSS_PACK.md executive summary placeholders."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CSV = ROOT / "results" / "matrix.csv"
-BOSS = ROOT / "docs" / "BOSS_PACK.md"
+BOSS = ROOT / "docs" / "procurement" / "BOSS_PACK.md"
 
 
 def main() -> int:

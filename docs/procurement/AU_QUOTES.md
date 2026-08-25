@@ -1,5 +1,7 @@
 # Australian purchase quotes (live-linked)
 
+> **Confluence (stakeholders):** [Australian AI hardware purchase quotes](https://harrythehirer.atlassian.net/wiki/spaces/TT/pages/679542785/Australian+AI+hardware+purchase+quotes)
+
 > **Re-quote live** before the boss pack goes out. Prices inc GST unless noted. Stock changes daily.
 
 Last verified: 2026-08-25. **Verify at retailer checkout.** Every table price was checked against the linked product page (not search snippets or aggregators).

@@ -35,7 +35,7 @@ Same prompts and Layer A quantization for fair comparison. LLM jobs use tensor-p
 | **2** | 1× RTX PRO 6000 (96 GB ECC) | A$26k–33k | **Business workstation** — media + Qwen native |
 | **3** | 2× RTX PRO 6000 (192 GB) | A$50k–70k | **DeepSeek native** + headroom |
 
-See [AU_QUOTES.md](AU_QUOTES.md) for retailer links and warranty.
+See [AU_QUOTES.md](AU_QUOTES.md) for retailer links and warranty. Stakeholder-facing copy: [CONFLUENCE.md](CONFLUENCE.md).
 
 ---
 
@@ -88,4 +88,4 @@ _TBD: e.g. “Request quote from Scorptec for Tier 2 workstation” or “Pilot 
 
 - Full CSV: `results/matrix.csv`
 - Sample outputs: `results/artifacts/`
-- Methodology: [README.md](../README.md)
+- Methodology: [README.md](../../README.md)
