@@ -13,9 +13,6 @@ REMOTE_ROOT = Path(__file__).resolve().parent
 RESULTS_DIR = REMOTE_ROOT / "results"
 PROGRESS_PATH = RESULTS_DIR / "PROGRESS.json"
 
-# Layer A rows: 3 image models × 3 prompts + 1 video + 2 LLMs × 2 prompts
-JOB_TOTAL = 14
-
 _state: dict[str, Any] = {}
 
 

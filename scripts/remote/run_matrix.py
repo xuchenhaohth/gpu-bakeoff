@@ -18,18 +18,21 @@ from artifacts import copy_comfy_output, write_transcript
 from comfy_client import run_image_job, run_video_job
 from hf_auth import hf_token
 from llm_client import llm_extra_args, run_llm_job
+from model_spec import (
+    active_image_models,
+    active_llm_models,
+    active_video_models,
+    compute_job_total,
+    resolve_model_spec,
+)
 from paths import ARTIFACTS_DIR, REMOTE_ROOT, RESULTS_DIR, load_config, resolve_asset
-from progress import JOB_TOTAL, format_last_result, write_progress
+from progress import format_last_result, write_progress
 from sampler import timed_run
 from upload_results import upload_job
 
 SKU = os.environ.get("BAKEOFF_SKU", "unknown")
 RESULTS_DIR.mkdir(exist_ok=True)
 ARTIFACTS_DIR.mkdir(exist_ok=True)
-
-IMAGE_MODELS = ["ideogram_4", "flux2_dev", "hunyuan_image_3"]
-VIDEO_MODELS = ["minimax_h3"]
-LLM_MODELS = ["qwen38_27b", "deepseek_v4_flash"]
 
 FIELDNAMES = [
     "timestamp",
@@ -64,9 +67,10 @@ FIELDNAMES = [
 
 
 class JobTracker:
-    """Tracks Layer A job index (1..JOB_TOTAL) for progress heartbeats."""
+    """Tracks Layer A job index (1..job_total) for progress heartbeats."""
 
-    def __init__(self) -> None:
+    def __init__(self, job_total: int) -> None:
+        self.job_total = job_total
         self.index = 0
 
     def start(self, model: str, prompt_id: str, stage: str) -> None:
@@ -81,7 +85,7 @@ class JobTracker:
         write_progress(
             "matrix",
             job_index=self.index,
-            job_total=JOB_TOTAL,
+            job_total=self.job_total,
             model=model,
             prompt_id=prompt_id,
             stage=stage,
@@ -187,7 +191,7 @@ def write_row(
     write_progress(
         "matrix",
         job_index=tracker.index,
-        job_total=JOB_TOTAL,
+        job_total=tracker.job_total,
         model=str(row.get("model", "")),
         prompt_id=str(row.get("prompt_id", "")),
         stage="done",
@@ -351,7 +355,8 @@ def run_llm_matrix(
     tracker: JobTracker,
     protocol: dict,
 ) -> None:
-    spec = models[model_key]
+    base_spec = models[model_key]
+    spec = resolve_model_spec(base_spec, SKU)
     skip, reason = should_skip_model(model_key, models)
     if skip:
         for key in ("short", "long"):
@@ -375,6 +380,9 @@ def run_llm_matrix(
     gguf = resolve_gguf_path(spec) if runtime == "llama_cpp" else None
     ngpus = gpu_count(matrix)
     extra = llm_extra_args(runtime, ngpus)
+    llama_extra = list(extra.get("llama") or [])
+    if spec.get("llama_extra_args"):
+        llama_extra = list(spec["llama_extra_args"]) + llama_extra
 
     llm_prompts = matrix.get("prompts", {}).get("llm", {})
     for key in ("short", "long"):
@@ -399,7 +407,7 @@ def run_llm_matrix(
                 gguf_path=gguf,
                 gpu_count=ngpus,
                 vllm_extra_args=extra.get("vllm"),
-                llama_extra_args=extra.get("llama"),
+                llama_extra_args=llama_extra or None,
             )
 
         elapsed, peak = timed_run(job, interval=protocol.get("sampler_interval_sec", 1.5), unified=unified)
@@ -428,15 +436,12 @@ def run_layer(
     tracker: JobTracker,
     protocol: dict,
 ) -> None:
-    for mk in IMAGE_MODELS:
-        if mk in models:
-            run_image_matrix(mk, models, matrix, writer, csv_file, tracker, protocol)
-    for mk in VIDEO_MODELS:
-        if mk in models:
-            run_video_matrix(mk, models, matrix, writer, csv_file, tracker, protocol)
-    for mk in LLM_MODELS:
-        if mk in models:
-            run_llm_matrix(mk, models, matrix, writer, csv_file, tracker, protocol)
+    for mk in active_image_models(models):
+        run_image_matrix(mk, models, matrix, writer, csv_file, tracker, protocol)
+    for mk in active_video_models(models):
+        run_video_matrix(mk, models, matrix, writer, csv_file, tracker, protocol)
+    for mk in active_llm_models(models):
+        run_llm_matrix(mk, models, matrix, writer, csv_file, tracker, protocol)
 
 
 def main() -> int:
@@ -444,11 +449,12 @@ def main() -> int:
     models_cfg = load_config("models.yaml")
     models = models_cfg.get("models", {})
     protocol = matrix.get("protocol", {})
+    job_total = compute_job_total(models, matrix, SKU)
 
-    write_progress("matrix", message="starting", job_total=JOB_TOTAL)
+    write_progress("matrix", message="starting", job_total=job_total)
 
     out_csv = RESULTS_DIR / "matrix.csv"
-    tracker = JobTracker()
+    tracker = JobTracker(job_total)
     with open(out_csv, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES, extrasaction="ignore")
         writer.writeheader()

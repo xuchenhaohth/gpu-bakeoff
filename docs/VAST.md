@@ -36,9 +36,9 @@ All orchestrator scripts read `VAST_API_KEY` from `.env` and pass `--api-key` to
 | | Personal API key | Team API key |
 |---|------------------|--------------|
 | SSH keys | Register at https://cloud.vast.ai/manage-keys/ | **Not supported** |
-| Harness delivery | `vastai copy` + SSH start; writes `.env.hf` for Hub auth | Vast `--onstart` clones public git at boot |
+| Harness delivery | SSH tar push + start; writes `.env.hf` for Hub auth | Vast `--onstart` clones public git at boot |
 | Progress | SSH poll `PROGRESS.json` | `vastai logs` — `[progress]` lines |
-| Results | `vastai copy` pull | VM uploads to Hugging Face; local `snapshot_download` |
+| Results | SSH tar pull | VM uploads to Hugging Face; local `snapshot_download` |
 
 Preflight picks SSH when the local pubkey is registered; otherwise it uses **onstart** transport automatically.
 
@@ -185,6 +185,30 @@ If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 2. Footnote Enverge Spark Cloud (~US$0.75/hr) as manual option
 3. Continue with other four SKUs — do not block the run
 
+## Qwen-only smoke (Spark GGUF + 5090 vLLM)
+
+Narrow run: two SKUs, one model, two LLM jobs (~minutes of matrix time after install).
+
+```bash
+./scripts/smoke_qwen.sh
+```
+
+Alternative (same preset; env caps live in [`scripts/lib/presets.py`](scripts/lib/presets.py)):
+
+```bash
+uv run python scripts/01_search_offers.py
+uv run python scripts/02_run_bakeoff.py --preset qwen-spark-5090
+```
+
+For custom SKU/model scope, use `--only-sku`, `--only-model`, and `--force-sku` on `02_run_bakeoff.py` (see [README.md](../README.md)).
+
+- Spark: `qwen38_27b` via `sku_layers` GGUF (`bowmanslayer/Qwen3.8-27B-GGUF`) + `llama-server` (built on aarch64 if needed).
+- 5090: vLLM + `RadixArk/Qwen3.8-27B-NVFP4`.
+- Poll should show `matrix 1/2` and `2/2`, not `1/14`.
+- Logs: `results/{sku}/run.log`, `llama.log` / `vllm.log` on the VM (pulled with results when present).
+- **Evidence gate:** a SKU run succeeds only when `matrix.csv` has at least one Layer A row with real `fit_status` (not `Stub`). Stub-only CSVs keep the instance for retry; `docs/FIT_MATRIX.md` maps `Stub` to `—`.
+- **Onstart parity:** Docker `-e` passes `BAKEOFF_MODELS`, `BAKEOFF_SKIP_COMFY`, and `BAKEOFF_FORCE_RESTART`; bootstrap writes `.env.sku` on boot. Onstart clones **public** git only — private forks need SSH push or a tokenized `BAKEOFF_GIT_URL`.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -201,7 +225,7 @@ If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 | `start_matrix.sh: No such file or directory` | `vastai copy` missed the container — harness is pushed via SSH tar now. Smoke: `ssh_smoke_test.py --push`. Check log for `Push (ssh)` and `Harness verified`. |
 | Same `install pip_*` line with `(unchanged Nm)` | Normal during long pip — read the `hint:` line or `vastai logs --tail 80` |
 | Stuck on `install install_stack` (old harness) | Push latest `main` — expect sub-steps `pip_comfyui`, `pip_vllm`, etc. |
-| `install skip_vllm_arm64` on Spark | Expected — vLLM has no reliable aarch64 wheel; Qwen LLM jobs stub |
+| `install skip_vllm_arm64` on Spark | Expected — Spark uses `sku_layers` GGUF + `llama-server` for Qwen (not vLLM) |
 | `Team SSH keys are not supported` | Expected on team keys — onstart transport is used automatically |
 | SSH timeout / connection refused | Personal-key path only — attach key or destroy and retry |
 | CUDA / sm_120 errors | Wrong image or driver on host — next candidate |

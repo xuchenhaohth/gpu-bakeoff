@@ -17,6 +17,8 @@ VLLM_URL = f"http://127.0.0.1:{VLLM_PORT}/v1/chat/completions"
 LLAMA_PORT = int(os.environ.get("LLAMA_PORT", "8080"))
 LLAMA_URL = f"http://127.0.0.1:{LLAMA_PORT}/v1/chat/completions"
 LLAMA_BIN = os.environ.get("LLAMA_SERVER_BIN", "llama-server")
+VLLM_LOG = Path("/workspace/bakeoff/vllm.log")
+LLAMA_LOG = Path("/workspace/bakeoff/llama.log")
 
 _vllm_model: str | None = None
 _llama_model: str | None = None
@@ -35,6 +37,16 @@ def llm_extra_args(runtime: str, gpu_count: int) -> dict[str, list[str] | None]:
             "llama": ["--split-mode", "layer", "--tensor-split", split],
         }
     return {"vllm": None, "llama": None}
+
+
+def _service_log_tail(path: Path, n: int = 20) -> str:
+    if not path.is_file():
+        return f"(no {path.name})"
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        return "\n".join(lines[-n:]) if lines else f"(empty {path.name})"
+    except OSError as exc:
+        return f"(could not read {path.name}: {exc})"
 
 
 def vllm_running() -> bool:
@@ -73,7 +85,9 @@ def start_vllm(model: str, extra_args: list[str] | None = None) -> bool:
     ]
     if extra_args:
         cmd.extend(extra_args)
-    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    VLLM_LOG.parent.mkdir(parents=True, exist_ok=True)
+    log_fh = VLLM_LOG.open("a", encoding="utf-8")
+    subprocess.Popen(cmd, stdout=log_fh, stderr=subprocess.STDOUT)
     for _ in range(120):
         if vllm_running():
             _vllm_model = model
@@ -104,7 +118,9 @@ def start_llama_server(gguf_path: str | Path, extra_args: list[str] | None = Non
     ]
     if extra_args:
         cmd.extend(extra_args)
-    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    LLAMA_LOG.parent.mkdir(parents=True, exist_ok=True)
+    log_fh = LLAMA_LOG.open("a", encoding="utf-8")
+    subprocess.Popen(cmd, stdout=log_fh, stderr=subprocess.STDOUT)
     for _ in range(90):
         if llama_running():
             _llama_model = str(path)
@@ -174,15 +190,18 @@ def chat_openai(url: str, model: str, system: str, user: str, max_tokens: int = 
     }
 
 
-def _stub_response(runtime: str, user: str, max_tokens: int, note: str) -> dict:
+def _error_response(runtime: str, note: str, log_path: Path | None = None) -> dict:
+    detail = note
+    if log_path is not None:
+        detail = f"{note}\n{_service_log_tail(log_path)}"
     return {
-        "pass": True,
-        "status": "stub",
-        "mode": f"{runtime}_stub",
+        "pass": False,
+        "status": "error",
+        "mode": f"{runtime}_error",
         "decode_tps": 0,
-        "output_tokens": max_tokens,
-        "prefill_tokens": len(user.split()),
-        "note": note,
+        "output_tokens": 0,
+        "note": detail,
+        "error": note,
     }
 
 
@@ -210,16 +229,19 @@ def run_llm_job(
     if runtime == "vllm":
         if start_vllm(model, vllm_extra_args) and vllm_running():
             return chat_openai(VLLM_URL, model, system, user, max_tokens)
-        return _stub_response("vllm", user, max_tokens, "Install vllm on instance for real metrics")
+        return _error_response(
+            "vllm",
+            "vLLM server did not start — install vllm on instance for real metrics",
+            VLLM_LOG,
+        )
 
     if runtime == "llama_cpp":
         if gguf_path and start_llama_server(gguf_path, llama_extra_args) and llama_running():
             return chat_openai(LLAMA_URL, model, system, user, max_tokens)
-        return _stub_response(
+        return _error_response(
             "llama_cpp",
-            user,
-            max_tokens,
             "llama-server not running — prefetch GGUF and install llama.cpp",
+            LLAMA_LOG,
         )
 
     return {"pass": False, "status": "error", "error": f"unknown runtime {runtime}"}

@@ -27,6 +27,24 @@ rsync -a "${CLONE_DIR}/scripts/remote/" "$BAKEOFF_ROOT/"
 mkdir -p "$BAKEOFF_ROOT/config"
 cp -a "${CLONE_DIR}/config/." "$BAKEOFF_ROOT/config/"
 
+# Mirror SSH push .env.sku so onstart/run_matrix see Docker -e vars.
+{
+  echo "BAKEOFF_SKU=${BAKEOFF_SKU:-unknown}"
+  echo "BAKEOFF_GPU_COUNT=${BAKEOFF_GPU_COUNT:-1}"
+  if [[ -n "${BAKEOFF_MODELS:-}" ]]; then
+    echo "BAKEOFF_MODELS=${BAKEOFF_MODELS}"
+  fi
+  if [[ -n "${BAKEOFF_SKIP_COMFY:-}" ]]; then
+    echo "BAKEOFF_SKIP_COMFY=${BAKEOFF_SKIP_COMFY}"
+  fi
+  if [[ -n "${BAKEOFF_FORCE_RESTART:-}" ]]; then
+    echo "BAKEOFF_FORCE_RESTART=${BAKEOFF_FORCE_RESTART}"
+  fi
+  if [[ -n "${LLAMA_SERVER_BIN:-}" ]]; then
+    echo "LLAMA_SERVER_BIN=${LLAMA_SERVER_BIN}"
+  fi
+} >"$BAKEOFF_ROOT/.env.sku"
+
 chmod +x "$BAKEOFF_ROOT/onstart.sh" "$BAKEOFF_ROOT/install_stack.sh"
 cd "$BAKEOFF_ROOT"
 mkdir -p results

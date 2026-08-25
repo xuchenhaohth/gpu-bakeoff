@@ -289,10 +289,40 @@ class ArtifactTests(unittest.TestCase):
             root = Path(tmp)
             sku_dir = root / "rtx5090_1x"
             sku_dir.mkdir()
-            (sku_dir / "matrix.csv").write_text("a\n")
+            csv_path = sku_dir / "matrix.csv"
+            with csv_path.open("w", newline="") as f:
+                w = csv.DictWriter(
+                    f,
+                    fieldnames=["layer", "fit_status", "sku", "model"],
+                )
+                w.writeheader()
+                w.writerow(
+                    {
+                        "layer": "A",
+                        "fit_status": "Stub",
+                        "sku": "rtx5090_1x",
+                        "model": "qwen38_27b",
+                    }
+                )
             import lib.pull_results as pr  # noqa: PLC0415
 
             pr.RESULTS = root
+            self.assertFalse(sku_has_results("rtx5090_1x"))
+
+            with csv_path.open("w", newline="") as f:
+                w = csv.DictWriter(
+                    f,
+                    fieldnames=["layer", "fit_status", "sku", "model"],
+                )
+                w.writeheader()
+                w.writerow(
+                    {
+                        "layer": "A",
+                        "fit_status": "Native",
+                        "sku": "rtx5090_1x",
+                        "model": "qwen38_27b",
+                    }
+                )
             self.assertTrue(sku_has_results("rtx5090_1x"))
 
 
@@ -375,6 +405,180 @@ class PrepareLocalFileDestTests(unittest.TestCase):
             prepared.write_bytes(b"log")
             self.assertTrue(prepared.is_file())
             self.assertEqual(prepared.read_bytes(), b"log")
+
+
+class ModelSpecTests(unittest.TestCase):
+    def test_resolve_spark_gguf_vs_5090_vllm(self) -> None:
+        import sys
+
+        remote = Path(__file__).resolve().parent / "remote"
+        sys.path.insert(0, str(remote))
+        from model_spec import resolve_model_spec  # noqa: PLC0415
+
+        base = {
+            "runtime": "vllm",
+            "hf_id": "Qwen/Qwen3.8-27B",
+            "layer_a": {"precision": "nvfp4", "checkpoint": "RadixArk/Qwen3.8-27B-NVFP4"},
+            "sku_layers": {
+                "dgx_spark_gb10": {
+                    "runtime": "llama_cpp",
+                    "hf_id": "bowmanslayer/Qwen3.8-27B-GGUF",
+                    "layer_a": {
+                        "precision": "q4_k_m",
+                        "file_hint": "Qwen3.8-27B-Text-Only-Q4_K_M.gguf",
+                    },
+                },
+            },
+        }
+        spark = resolve_model_spec(base, "dgx_spark_gb10")
+        rtx = resolve_model_spec(base, "rtx5090_1x")
+        self.assertEqual(spark["runtime"], "llama_cpp")
+        self.assertEqual(spark["layer_a"]["file_hint"], "Qwen3.8-27B-Text-Only-Q4_K_M.gguf")
+        self.assertEqual(rtx["runtime"], "vllm")
+        self.assertEqual(rtx["layer_a"]["checkpoint"], "RadixArk/Qwen3.8-27B-NVFP4")
+
+    def test_bakeoff_models_filter_job_total(self) -> None:
+        import os
+        import sys
+
+        remote = Path(__file__).resolve().parent / "remote"
+        sys.path.insert(0, str(remote))
+        from model_spec import compute_job_total  # noqa: PLC0415
+
+        os.environ["BAKEOFF_MODELS"] = "qwen38_27b"
+        matrix = {
+            "prompts": {
+                "image": [{"id": "img01"}],
+                "video": [{"id": "vid01"}],
+                "llm": {"short": {"id": "llm_short"}, "long": {"id": "llm_long"}},
+            },
+        }
+        models = {
+            "qwen38_27b": {"runtime": "vllm", "hf_id": "Qwen/Qwen3.8-27B", "layer_a": {"precision": "nvfp4"}},
+        }
+        self.assertEqual(compute_job_total(models, matrix, "rtx5090_1x"), 2)
+        del os.environ["BAKEOFF_MODELS"]
+
+
+class MatrixEvidenceTests(unittest.TestCase):
+    def test_has_evidence_and_stub_only(self) -> None:
+        from lib.matrix_evidence import has_evidence, is_stub_only, read_matrix_rows
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "matrix.csv"
+            with path.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=["layer", "fit_status"])
+                w.writeheader()
+                w.writerow({"layer": "A", "fit_status": "Stub"})
+                w.writerow({"layer": "A", "fit_status": "Stub"})
+            rows = read_matrix_rows(path)
+            self.assertFalse(has_evidence(rows))
+            self.assertTrue(is_stub_only(rows))
+
+            with path.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=["layer", "fit_status"])
+                w.writeheader()
+                w.writerow({"layer": "A", "fit_status": "Native"})
+            rows = read_matrix_rows(path)
+            self.assertTrue(has_evidence(rows))
+            self.assertFalse(is_stub_only(rows))
+
+
+class ComfyFailFastTests(unittest.TestCase):
+    def test_comfy_timeout_returns_error_not_stub(self) -> None:
+        import sys
+
+        remote = Path(__file__).resolve().parent / "remote"
+        sys.path.insert(0, str(remote))
+        from comfy_client import _comfy_start_error  # noqa: PLC0415
+
+        result = _comfy_start_error("flux2_dev", 42)
+        self.assertEqual(result["status"], "error")
+        self.assertFalse(result.get("pass", True))
+        self.assertNotEqual(result.get("mode"), "gpu_stub")
+
+    def test_classify_fit_maps_error_to_no(self) -> None:
+        import sys
+
+        remote = Path(__file__).resolve().parent / "remote"
+        sys.path.insert(0, str(remote))
+        from run_matrix import classify_fit  # noqa: PLC0415
+
+        self.assertEqual(classify_fit("error", {}, {}, "image", {}), "No")
+
+
+class LlmClientTests(unittest.TestCase):
+    def test_vllm_start_failure_returns_error(self) -> None:
+        import sys
+        from unittest.mock import patch
+
+        remote = Path(__file__).resolve().parent / "remote"
+        sys.path.insert(0, str(remote))
+        from llm_client import run_llm_job  # noqa: PLC0415
+
+        with patch("llm_client.start_vllm", return_value=False):
+            out = run_llm_job("vllm", "model", "sys", "user", max_tokens=32)
+        self.assertFalse(out["pass"])
+        self.assertEqual(out["status"], "error")
+
+
+class ResumeMatrixTests(unittest.TestCase):
+    def test_resume_matrix_triggers_push_and_run(self) -> None:
+        from unittest.mock import patch
+
+        from lib.bakeoff import run_one_sku
+
+        rec = {"instance_id": 99999, "sku_id": "rtx5090_1x"}
+        offers: dict = {"skus": {}}
+        sku_meta: dict = {}
+
+        with (
+            patch("lib.bakeoff.use_onstart_transport", return_value=False),
+            patch("lib.bakeoff.wait_for_matrix", return_value="done"),
+            patch("lib.bakeoff.pull_sku"),
+            patch("lib.bakeoff.verify_sku_evidence", return_value=True),
+            patch("lib.bakeoff.destroy_instance") as destroy,
+            patch("lib.bakeoff.push_and_run") as push,
+        ):
+            ok, _ = run_one_sku(
+                "rtx5090_1x",
+                rec,
+                offers,
+                sku_meta,
+                mode="resume_matrix",
+            )
+        self.assertTrue(ok)
+        push.assert_called_once_with(99999, "rtx5090_1x", force=False)
+        destroy.assert_called_once()
+
+    def test_stub_only_matrix_keeps_instance(self) -> None:
+        from unittest.mock import patch
+
+        from lib.bakeoff import run_one_sku
+
+        rec = {"instance_id": 99999, "sku_id": "rtx5090_1x"}
+        offers: dict = {"skus": {}}
+        sku_meta: dict = {}
+
+        with (
+            patch("lib.bakeoff.use_onstart_transport", return_value=False),
+            patch("lib.bakeoff.push_and_run"),
+            patch("lib.bakeoff.wait_for_matrix", return_value="done"),
+            patch("lib.bakeoff.pull_sku"),
+            patch("lib.bakeoff.verify_sku_evidence", return_value=False),
+            patch("lib.bakeoff.pull_service_logs_best_effort"),
+            patch("lib.bakeoff.destroy_instance") as destroy,
+        ):
+            ok, out = run_one_sku(
+                "rtx5090_1x",
+                rec,
+                offers,
+                sku_meta,
+                mode="push_and_run",
+            )
+        self.assertFalse(ok)
+        self.assertIn("stub-only", out.get("error", ""))
+        destroy.assert_not_called()
 
 
 if __name__ == "__main__":

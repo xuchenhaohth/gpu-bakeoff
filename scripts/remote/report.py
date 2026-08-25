@@ -145,14 +145,22 @@ th {{ background: #f0f0f0; }}
     print(f"Wrote {out_path}")
 
 
+def boss_fit_status(status: str) -> str:
+    """Map Stub to em-dash for boss-facing matrix; real evidence passes through."""
+    if status == "Stub":
+        return "—"
+    return status
+
+
 def update_fit_matrix_md(rows: list[dict]) -> None:
     if not DOCS_MATRIX.exists():
         return
     fit = pivot_fit(rows)
     skus = sorted({str(r["sku"]) for r in rows if r.get("sku")})
-    lines = ["| Model | " + " | ".join(skus) + " |", "|-------|" + "|".join(["---"] * len(skus)) + "|"]
+    note = "_Stub rows excluded from boss matrix._"
+    lines = [note, "", "| Model | " + " | ".join(skus) + " |", "|-------|" + "|".join(["---"] * len(skus)) + "|"]
     for m in sorted(fit.keys()):
-        cells = [fit[m].get(s, "—") for s in skus]
+        cells = [boss_fit_status(fit[m].get(s, "—")) for s in skus]
         lines.append("| " + m + " | " + " | ".join(cells) + " |")
     block = "\n".join(lines)
     text = DOCS_MATRIX.read_text()

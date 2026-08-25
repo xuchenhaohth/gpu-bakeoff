@@ -63,6 +63,10 @@ def launch_one(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> 
     )
     if hf_results:
         env_str += f" -e HF_RESULTS_REPO={hf_results}"
+    for key in ("BAKEOFF_MODELS", "BAKEOFF_SKIP_COMFY", "BAKEOFF_FORCE_RESTART"):
+        val = os.environ.get(key, "").strip()
+        if val:
+            env_str += f" -e {key}={val}"
 
     args: list[str] = [
         "create",

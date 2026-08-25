@@ -15,7 +15,6 @@ _SSH_PUBKEYS = (
     Path.home() / ".ssh" / "id_ed25519.pub",
     Path.home() / ".ssh" / "id_rsa.pub",
 )
-_SSH_BATCH_DIR = Path(__file__).resolve().parent / "ssh_batchmode"
 
 
 def local_ssh_pubkey() -> Path | None:
@@ -31,12 +30,6 @@ def local_ssh_identity() -> Path | None:
         return None
     identity = pub.with_suffix("")
     return identity if identity.is_file() else None
-
-
-def _copy_env() -> dict[str, str]:
-    env = os.environ.copy()
-    env["PATH"] = f"{_SSH_BATCH_DIR}{os.pathsep}{env.get('PATH', '')}"
-    return env
 
 
 def normalize_vast_list(raw: Any, nested_key: str | None = None) -> list[dict[str, Any]]:
@@ -156,41 +149,6 @@ def account_credit() -> float:
     if not isinstance(user, dict):
         return 0.0
     return float(user.get("credit") or user.get("balance") or 0)
-
-
-def vastai_copy(src: str, dst: str, check: bool = True) -> None:
-    args: list[str] = ["copy", src, dst]
-    identity = local_ssh_identity()
-    if identity is not None:
-        args.extend(["--identity", str(identity)])
-    proc = subprocess.run(
-        _vastai_cmd(*args, raw=False),
-        capture_output=True,
-        text=True,
-        stdin=subprocess.DEVNULL,
-        env=_copy_env(),
-    )
-    if proc.returncode == 0 and not vast_cli_error(proc.stdout, proc.stderr):
-        return
-    err = vast_cli_error(proc.stdout, proc.stderr)
-    lowered = f"{proc.stderr}\n{proc.stdout}".lower()
-    ssh_auth = any(
-        token in lowered
-        for token in ("permission denied", "password", "authentication failed", "publickey")
-    )
-    hint = ""
-    if ssh_auth:
-        hint = (
-            "\nSSH copy failed — Vast has no VM password. "
-            "Use a personal API key and register ~/.ssh/id_ed25519.pub at "
-            "https://cloud.vast.ai/manage-keys/"
-        )
-    if check:
-        raise RuntimeError(
-            f"vastai copy failed ({proc.returncode}): {src} -> {dst}\n"
-            f"{err or ''}\n"
-            f"stderr: {proc.stderr}\nstdout: {proc.stdout}{hint}"
-        )
 
 
 def vastai_logs(instance_id: int, *, tail: int = 500) -> str:

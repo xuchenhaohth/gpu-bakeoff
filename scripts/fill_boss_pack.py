@@ -5,10 +5,15 @@ from __future__ import annotations
 
 import csv
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from lib.matrix_evidence import RUNS_ON_STATUSES  # noqa: E402
+
 CSV = ROOT / "results" / "matrix.csv"
 BOSS = ROOT / "docs" / "procurement" / "BOSS_PACK.md"
 
@@ -25,17 +30,26 @@ def main() -> int:
         fit[r["model"]][r["sku"]] = r.get("fit_status", "?")
 
     bullets = []
+    stub_bullets = []
     for model, skus in sorted(fit.items()):
-        ok = [s for s, v in skus.items() if v not in ("No", "")]
+        ok = [s for s, v in skus.items() if v in RUNS_ON_STATUSES]
         no = [s for s, v in skus.items() if v == "No"]
+        stub = [s for s, v in skus.items() if v == "Stub"]
         if no:
             bullets.append(f"- **{model}**: does not fit on {', '.join(no)}")
         if ok:
             bullets.append(f"- **{model}**: runs on {', '.join(ok)}")
+        if stub:
+            stub_bullets.append(f"- **{model}**: stub / no evidence on {', '.join(stub)}")
+
+    summary_parts = []
+    if bullets:
+        summary_parts.append("\n".join(bullets))
+    if stub_bullets:
+        summary_parts.append("**Stub / no evidence (not counted as runs on):**\n" + "\n".join(stub_bullets))
+    summary = "\n\n".join(summary_parts) if summary_parts else "_No results yet._"
 
     text = BOSS.read_text()
-    summary = "\n".join(bullets) if bullets else "_No results yet._"
-
     tbd = (
         "_TBD: Under our budget options, which models run locally for video/image "
         "generation and coding agents, and which tier is the minimum viable purchase._"

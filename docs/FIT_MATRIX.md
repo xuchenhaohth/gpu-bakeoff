@@ -15,9 +15,7 @@
 ## Matrix (Layer A — shared quant)
 
 <!-- AUTO_MATRIX_START -->
-| Model | _fill after run_ |
-|-------|---|
-| _example_ | _TBD_ |
+_No matrix data yet — run `02_run_bakeoff.py` to populate._
 <!-- AUTO_MATRIX_END -->
 
 ## Staff wait time (from CSV)

@@ -13,22 +13,25 @@ from lib.instance_lifecycle import (
     reconcile_bakeoff_instances,
     resolve_sku_instance,
 )
+from lib.matrix_evidence import verify_sku_evidence
 from lib.matrix_poll import wait_for_matrix
 from lib.pull_results import (
     dump_ssh_diagnostics,
     merge_results,
     pull_run_log_best_effort,
+    pull_service_logs_best_effort,
     pull_sku,
     sku_has_results,
 )
-from lib.push_and_run import push_and_run
-from lib.sku_blocks import count_runnable_skus, iter_runnable_skus
+from lib.push_and_run import push_and_run, set_push_models
+from lib.sku_blocks import count_scheduled_skus, iter_scheduled_skus
 from lib.ssh_preflight import ensure_ssh_ready
 from lib.ssh_remote import SshNotReadyError
 from lib.transport import get_transport, use_onstart_transport
 from lib.vast import ROOT, account_credit, read_yaml, save_instances
 from lib.wait_running import retry_ssh_backups, wait_until_running
 
+RESULTS = ROOT / "results"
 OFFERS_PATH = ROOT / "config" / "offers.yaml"
 MATRIX_PATH = ROOT / "config" / "matrix.yaml"
 MATRIX_TIMEOUT_SEC = int(os.environ.get("MATRIX_TIMEOUT_SEC", "28800"))
@@ -49,7 +52,12 @@ def format_sku_banner(
     )
 
 
-def spend_check(offers: dict[str, Any]) -> None:
+def spend_check(
+    offers: dict[str, Any],
+    *,
+    only_skus: set[str] | None = None,
+    skip_skus: set[str] | None = None,
+) -> None:
     max_usd = float(os.environ.get("MAX_USD", "180"))
     min_credit = float(os.environ.get("MIN_CREDIT_USD", "50"))
     credit = account_credit()
@@ -64,13 +72,13 @@ def spend_check(offers: dict[str, Any]) -> None:
     total_dph = 0.0
     peak_dph = 0.0
     count = 0
-    for _sku_id, block in iter_runnable_skus(offers):
+    for _sku_id, block in iter_scheduled_skus(offers, only_skus=only_skus, skip_skus=skip_skus):
         dph = float(block["candidates"][0].get("dph_total") or 0)
         total_dph += dph
         peak_dph = max(peak_dph, dph)
         count += 1
     if count == 0:
-        raise SystemExit("No runnable SKUs — run 01_search_offers.py")
+        raise SystemExit("No runnable SKUs — run 01_search_offers.py or adjust --only-sku/--skip-sku")
 
     projected = total_dph * MAX_HOURS_PER_SKU
     print(
@@ -87,6 +95,7 @@ def run_one_sku(
     offers: dict[str, Any],
     sku_meta: dict[str, Any],
     mode: ResumeMode = "fresh",
+    force: bool = False,
 ) -> tuple[bool, dict[str, Any]]:
     """Wait, run matrix, pull results, and destroy one SKU instance."""
     pulled_ok = False
@@ -94,6 +103,11 @@ def run_one_sku(
         iid = int(rec["instance_id"])
         try:
             pull_sku(iid, sku_id)
+            if not verify_sku_evidence(RESULTS, sku_id):
+                pull_service_logs_best_effort(iid, sku_id)
+                rec["error"] = "stub-only matrix (no real evidence)"
+                print(f"  {sku_id}: stub-only matrix — instance {iid} kept for retry")
+                return False, rec
             pulled_ok = True
             return True, rec
         except Exception as exc:
@@ -115,8 +129,8 @@ def run_one_sku(
 
     iid = int(running["instance_id"])
     try:
-        if mode in ("fresh", "wait", "push_and_run") and not use_onstart_transport():
-            push_and_run(iid, sku_id)
+        if mode in ("fresh", "wait", "push_and_run", "resume_matrix") and not use_onstart_transport():
+            push_and_run(iid, sku_id, force=force)
         running["matrix_status"] = wait_for_matrix(iid, sku_id)
         status = running["matrix_status"]
         if status != "done":
@@ -128,6 +142,11 @@ def run_one_sku(
         pull_via = "Hugging Face" if use_onstart_transport() else "SSH"
         print(f"  {sku_id}: matrix {status} — pulling results via {pull_via}")
         pull_sku(iid, sku_id)
+        if not verify_sku_evidence(RESULTS, sku_id):
+            pull_service_logs_best_effort(iid, sku_id)
+            running["error"] = "stub-only matrix (no real evidence)"
+            print(f"  {sku_id}: stub-only matrix — instance {iid} kept for retry")
+            return False, running
         pulled_ok = True
         return True, running
     except SshNotReadyError as exc:
@@ -148,6 +167,7 @@ def run_one_sku(
                     offers,
                     sku_meta,
                     mode="push_and_run",
+                    force=force,
                 )
             print(f"  {sku_id}: SSH auth failed — no backup offer with working SSH")
             running["error"] = str(exc)
@@ -166,16 +186,25 @@ def run_one_sku(
             destroy_instance(running, sku_id)
 
 
-def run_serial(skip_skus: set[str] | None = None) -> int:
+def run_serial(
+    skip_skus: set[str] | None = None,
+    only_skus: set[str] | None = None,
+    only_models: set[str] | None = None,
+    force_skus: set[str] | None = None,
+) -> int:
     if not OFFERS_PATH.exists():
         raise SystemExit(f"Missing {OFFERS_PATH} — run 01_search_offers.py first")
 
     skip = skip_skus or set()
+    only = only_skus
+    force = force_skus or set()
+    model_list = sorted(only_models) if only_models else None
     offers = read_yaml(OFFERS_PATH)
     matrix = read_yaml(MATRIX_PATH)
     matrix_skus = matrix.get("skus", {})
     ensure_ssh_ready()
-    spend_check(offers)
+    spend_check(offers, only_skus=only, skip_skus=skip)
+    set_push_models(model_list)
 
     state = reconcile_bakeoff_instances(matrix_skus)
     if not state.get("launched_at"):
@@ -183,9 +212,12 @@ def run_serial(skip_skus: set[str] | None = None) -> int:
 
     attempted = 0
     succeeded = 0
-    planned_total = count_runnable_skus(offers)
+    planned_total = count_scheduled_skus(offers, only_skus=only, skip_skus=skip)
 
     for sku_id, block in offers.get("skus", {}).items():
+        if only and sku_id not in only:
+            continue
+
         cands = block.get("candidates") or []
         sku_meta = block.get("sku_meta") or matrix_skus.get(sku_id, {})
         if not cands:
@@ -200,7 +232,7 @@ def run_serial(skip_skus: set[str] | None = None) -> int:
         if sku_id in skip:
             print(f"Skipping {sku_id} (--skip-sku)")
             continue
-        if sku_has_results(sku_id):
+        if sku_has_results(sku_id) and sku_id not in force:
             print(f"Skipping {sku_id} (already has results)")
             continue
 
@@ -222,7 +254,14 @@ def run_serial(skip_skus: set[str] | None = None) -> int:
         save_instances(state)
 
         try:
-            ok, rec = run_one_sku(sku_id, rec, offers, sku_meta, mode=mode)
+            ok, rec = run_one_sku(
+                sku_id,
+                rec,
+                offers,
+                sku_meta,
+                mode=mode,
+                force=sku_id in force,
+            )
             if ok:
                 succeeded += 1
             else:

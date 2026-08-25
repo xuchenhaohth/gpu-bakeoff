@@ -33,7 +33,7 @@ Set `HF_TOKEN` in `.env`. On the VM, `load_hf_env.sh` sources `.env.hf` (SSH pus
 | ideogram_4 | `ideogram_4.json` | — |
 | hunyuan_image_3 | `hunyuan_image_3.json` | ComfyUI-HunyuanImage-3 |
 | minimax_h3 | `minimax_h3.json` | ComfyUI-LTXVideo |
-| qwen38_27b | — (vLLM) | — |
+| qwen38_27b | — (vLLM on x86; GGUF llama-server on Spark) | — |
 | deepseek_v4_flash | — (llama.cpp GGUF) | — |
 
 ComfyUI image/video jobs use GPU 0 only. LLM jobs use tensor-parallel on `rtx5090_2x` and `pro6000_2x`.
@@ -65,5 +65,5 @@ Open weights are **non-commercial**. Matrix may show technical fit; production u
 | Ideogram 4 | Yes | Yes | Yes | Yes | Yes |
 | Hunyuan 3 | Offload | NF4 | NF4 | NF4 | NF4 |
 | FLUX.2 | FP8 | FP8 | FP8 | FP8 | FP8 slow |
-| Qwen3.8 | NVFP4 | NVFP4 + TP | NVFP4 | NVFP4 + TP | NVFP4 slow |
+| Qwen3.8 | NVFP4 | NVFP4 + TP | NVFP4 | NVFP4 + TP | Q4_K_M GGUF (llama-server) |
 | DeepSeek | No (skip) | No (skip) | GGUF | GGUF + TP | GGUF |

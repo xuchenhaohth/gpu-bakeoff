@@ -19,6 +19,18 @@ if [[ -f "$BAKEOFF_ROOT/.env.sku" ]]; then
   set +a
 fi
 
+if [[ "${BAKEOFF_FORCE_RESTART:-}" == "1" ]]; then
+  if [[ -f "$PID_FILE" ]]; then
+    old_pid="$(cat "$PID_FILE")"
+    if kill -0 "$old_pid" 2>/dev/null; then
+      echo "Force restart: killing harness pid $old_pid"
+      kill "$old_pid" 2>/dev/null || true
+      sleep 1
+    fi
+  fi
+  rm -f "$BAKEOFF_ROOT/results/DONE" "$BAKEOFF_ROOT/results/PROGRESS.json"
+fi
+
 if [[ -f "$PID_FILE" ]]; then
   old_pid="$(cat "$PID_FILE")"
   if kill -0 "$old_pid" 2>/dev/null; then

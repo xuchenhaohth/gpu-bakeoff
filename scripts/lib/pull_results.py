@@ -10,6 +10,7 @@ from glob import glob
 from pathlib import Path
 
 from lib.hf_results import pull_sku_from_hf, sku_matrix_path, verify_sku_matrix
+from lib.matrix_evidence import has_evidence, read_matrix_rows
 from lib.ssh_preflight import attach_instance_ssh
 from lib.ssh_remote import (
     HARNESS_ROOT,
@@ -40,7 +41,8 @@ def pull_remote_ssh(
 
 
 def sku_has_results(sku_id: str) -> bool:
-    return sku_matrix_path(RESULTS, sku_id).is_file()
+    path = sku_matrix_path(RESULTS, sku_id)
+    return path.is_file() and has_evidence(read_matrix_rows(path))
 
 
 def refresh_merged_report(update_docs: bool = False) -> bool:
@@ -107,6 +109,26 @@ def pull_sku(instance_id: int, sku_id: str) -> None:
         pull_remote_ssh(instance_id, RUN_LOG_REMOTE, sku_dir / "run.log", is_dir=False, required=False)
     except Exception as exc:
         print(f"  {sku_id}: optional run.log pull failed: {exc}")
+
+
+def pull_service_logs_best_effort(instance_id: int, sku_id: str) -> None:
+    """Pull comfy/llama/vllm service logs for stub-only or failed matrix debugging."""
+    if use_onstart_transport():
+        return
+    sku_dir = RESULTS / sku_id
+    for name in ("comfy.log", "llama.log", "vllm.log"):
+        try:
+            attach_instance_ssh(instance_id)
+            wait_for_ssh(instance_id)
+            pull_remote_ssh(
+                instance_id,
+                f"{HARNESS_ROOT}/{name}",
+                sku_dir / name,
+                is_dir=False,
+                required=False,
+            )
+        except Exception as exc:
+            print(f"  {sku_id}: could not pull {name}: {exc}")
 
 
 def pull_run_log_best_effort(instance_id: int, sku_id: str) -> None:

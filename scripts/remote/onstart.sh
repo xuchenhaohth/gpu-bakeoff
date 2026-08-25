@@ -24,7 +24,7 @@ export DEBIAN_FRONTEND=noninteractive
 if command -v apt-get >/dev/null 2>&1; then
   python3 progress.py --phase onstart --message apt_packages
   apt-get update -qq
-  apt-get install -y -qq git curl wget python3 procps build-essential >/dev/null 2>&1 || true
+  apt-get install -y -qq git curl wget python3 procps build-essential cmake >/dev/null 2>&1 || true
 fi
 
 export PATH="${HOME}/.local/bin:${PATH}"
@@ -45,7 +45,14 @@ uv pip install -q pyyaml requests huggingface_hub psutil
 python3 progress.py --phase onstart --message setup_venv
 
 if [[ -f "$BAKEOFF_ROOT/install_stack.sh" ]]; then
-  bash "$BAKEOFF_ROOT/install_stack.sh" || echo "WARN: install_stack partial failure"
+  bash "$BAKEOFF_ROOT/install_stack.sh"
+fi
+
+if [[ -f "$BAKEOFF_ROOT/.env.sku" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$BAKEOFF_ROOT/.env.sku"
+  set +a
 fi
 
 if [[ -n "${HF_TOKEN:-}" ]]; then
@@ -88,4 +95,4 @@ print("Wrote results/environment.json")
 PY
 
 echo "== onstart complete =="
-python3 prefetch_models.py || echo "WARN: prefetch partial failure — check HF_TOKEN and licenses"
+python3 prefetch_models.py

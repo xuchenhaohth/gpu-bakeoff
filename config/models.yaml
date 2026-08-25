@@ -59,6 +59,15 @@ models:
     layer_a:
       precision: nvfp4
       checkpoint: RadixArk/Qwen3.8-27B-NVFP4
+    sku_layers:
+      dgx_spark_gb10:
+        runtime: llama_cpp
+        hf_id: bowmanslayer/Qwen3.8-27B-GGUF
+        layer_a:
+          precision: q4_k_m
+          file_hint: Qwen3.8-27B-Text-Only-Q4_K_M.gguf
+        llama_extra_args:
+          - --jinja
 
   deepseek_v4_flash:
     hf_id: prometheusAIR/DeepSeek-V4-Flash-0731-GGUF

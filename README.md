@@ -2,7 +2,7 @@
 
 Serial **Vast.ai** evidence run for a boss-facing hardware × model fit matrix. This folder does **not** recommend a purchase until a **Vast GPU run** produces `results/matrix.csv` — local dry-run output is pipeline validation only, not purchase evidence.
 
-> **Harness status:** Remote instances install ComfyUI, vLLM, and llama.cpp via `install_stack.sh`. Without a live GPU, `dry_run_local.py` records `Stub` rows for LLM jobs and GPU-warmup stubs for image/video.
+> **Harness status:** Remote instances install ComfyUI, vLLM, and llama.cpp via `install_stack.sh`. Local `dry_run_local.py` validates the CSV/report pipeline without Vast billing (services unavailable → error rows, not purchase evidence).
 
 ## Prerequisites
 
@@ -45,6 +45,7 @@ uv run python scripts/dry_run_local.py
 | Check env | `./scripts/00_check_env.sh` |
 | Discover offers | `uv run python scripts/01_search_offers.py` |
 | SSH smoke test (one offer, ~minutes) | `uv run python scripts/ssh_smoke_test.py --sku dgx_spark_gb10 --candidate-index 1 --push` |
+| Qwen smoke (Spark + 5090, LLM-only) | `./scripts/smoke_qwen.sh` |
 | Serial bake-off (one SKU at a time) | `uv run python scripts/02_run_bakeoff.py` |
 | Pull HF results only (no GPU) | `uv run python scripts/03_pull_hf_results.py --sku <sku_id>` |
 | Boss pack | `uv run python scripts/fill_boss_pack.py` then review `docs/procurement/BOSS_PACK.md` |
@@ -55,9 +56,21 @@ uv run python scripts/dry_run_local.py
 
 **Interrupt cleanup:** `uv run python scripts/02_run_bakeoff.py --destroy-only`
 
-**Skip SKUs:** `uv run python scripts/02_run_bakeoff.py --skip-sku dgx_spark_gb10` (also skips SKUs that already have `results/{sku}/matrix.csv`)
+**Skip SKUs:** `uv run python scripts/02_run_bakeoff.py --skip-sku dgx_spark_gb10` (also skips SKUs that already have evidence in `results/{sku}/matrix.csv` — Stub-only CSVs do not count)
 
-**Resume after interrupt:** Re-run `02_run_bakeoff.py` — healthy instances are reused (matrix wait/pull); dead orphans are destroyed at startup. See [docs/VAST.md](docs/VAST.md#stale-instances-reuse-vs-destroy).
+**Narrow runs:** `--only-sku`, `--only-model`, `--force-sku`, and `--preset` limit scope and bypass stale results. For a quick Qwen-only smoke on Spark + 5090, use `./scripts/smoke_qwen.sh` (see [docs/VAST.md](docs/VAST.md#qwen-only-smoke-spark-gguf--5090-vllm)).
+
+```bash
+uv run python scripts/02_run_bakeoff.py \
+  --only-sku dgx_spark_gb10 \
+  --only-sku rtx5090_1x \
+  --only-model qwen38_27b \
+  --force-sku dgx_spark_gb10
+```
+
+**LLM-only smoke:** `BAKEOFF_SKIP_COMFY=1` skips ComfyUI install (~10–20 min per SKU). The smoke script sets this automatically.
+
+**Resume after interrupt:** Re-run `02_run_bakeoff.py` — healthy instances are reused (harness re-pushed on `resume_matrix`); dead orphans are destroyed at startup. Stub-only pulls keep the instance for retry. See [docs/VAST.md](docs/VAST.md#stale-instances-reuse-vs-destroy).
 
 ## Outputs
 

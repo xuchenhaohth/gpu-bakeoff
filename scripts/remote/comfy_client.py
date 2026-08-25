@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -10,9 +11,32 @@ from pathlib import Path
 import comfy_api
 from workflow_loader import inject_params, load_workflow
 
-COMFY_PORT = int(__import__("os").environ.get("COMFY_PORT", "8188"))
+COMFY_PORT = int(os.environ.get("COMFY_PORT", "8188"))
+COMFY_STARTUP_SEC = int(os.environ.get("COMFY_STARTUP_SEC", "45"))
 COMFY_DIR = Path("/workspace/ComfyUI")
 COMFY_LOG = Path("/workspace/bakeoff/comfy.log")
+
+
+def _comfy_log_tail(n: int = 20) -> str:
+    if not COMFY_LOG.is_file():
+        return "(no comfy.log)"
+    try:
+        lines = COMFY_LOG.read_text(encoding="utf-8", errors="replace").splitlines()
+        return "\n".join(lines[-n:]) if lines else "(empty comfy.log)"
+    except OSError as exc:
+        return f"(could not read comfy.log: {exc})"
+
+
+def _comfy_start_error(model: str, seed: int) -> dict:
+    return {
+        "mode": "comfyui",
+        "status": "error",
+        "pass": False,
+        "model": model,
+        "seed": seed,
+        "error": "ComfyUI did not start",
+        "note": _comfy_log_tail(),
+    }
 
 
 def start_comfy(background: bool = True) -> None:
@@ -29,31 +53,24 @@ def start_comfy(background: bool = True) -> None:
             stdout=log_fh,
             stderr=subprocess.STDOUT,
         )
-        for _ in range(60):
+        deadline = time.monotonic() + COMFY_STARTUP_SEC
+        last_progress = 0.0
+        while time.monotonic() < deadline:
             if comfy_api.server_up():
                 return
+            now = time.monotonic()
+            if now - last_progress >= 15:
+                try:
+                    from progress import write_progress  # noqa: PLC0415
+
+                    write_progress(
+                        "comfy_wait",
+                        message=f"waiting for ComfyUI :{COMFY_PORT}",
+                    )
+                except Exception:
+                    pass
+                last_progress = now
             time.sleep(2)
-
-
-def _gpu_warmup_stub(model: str, seed: int) -> dict:
-    try:
-        subprocess.run(
-            [
-                "python3",
-                "-c",
-                "import torch; "
-                "assert torch.cuda.is_available(); "
-                "x=torch.randn(4096,4096,device='cuda'); (x@x).sum().item()",
-            ],
-            check=False,
-            capture_output=True,
-            timeout=60,
-        )
-    except Exception:
-        time.sleep(0.2)
-    else:
-        time.sleep(0.2)
-    return {"mode": "gpu_stub", "status": "stub", "model": model, "seed": seed}
 
 
 def _run_comfy_workflow(
@@ -67,12 +84,12 @@ def _run_comfy_workflow(
 ) -> dict:
     start_comfy()
     if not comfy_api.server_up():
-        return _gpu_warmup_stub(model_key, seed)
+        return _comfy_start_error(model_key, seed)
 
     try:
         workflow = load_workflow(model_key)
     except FileNotFoundError as e:
-        return {"mode": "missing_workflow", "status": "error", "error": str(e)}
+        return {"mode": "missing_workflow", "status": "error", "pass": False, "error": str(e)}
 
     wf = inject_params(
         workflow,

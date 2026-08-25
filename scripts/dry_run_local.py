@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -23,7 +24,19 @@ def cleanup() -> None:
 
 
 def main() -> int:
-    os.environ["BAKEOFF_SKU"] = "rtx5090_1x"
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only-model", action="append", dest="only_models", metavar="MODEL")
+    ap.add_argument("--sku", default=os.environ.get("BAKEOFF_SKU", "rtx5090_1x"))
+    args = ap.parse_args()
+
+    os.environ["BAKEOFF_SKU"] = args.sku
+    if args.only_models:
+        os.environ["BAKEOFF_MODELS"] = ",".join(args.only_models)
+    elif os.environ.get("BAKEOFF_MODELS"):
+        pass
+    else:
+        os.environ.pop("BAKEOFF_MODELS", None)
+
     cleanup()
     try:
         REMOTE_CONFIG.mkdir(parents=True)

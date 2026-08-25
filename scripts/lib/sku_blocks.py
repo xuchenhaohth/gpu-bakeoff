@@ -17,5 +17,26 @@ def iter_runnable_skus(offers: dict[str, Any]) -> Iterator[tuple[str, dict[str, 
             yield sku_id, block
 
 
-def count_runnable_skus(offers: dict[str, Any]) -> int:
-    return sum(1 for _ in iter_runnable_skus(offers))
+def iter_scheduled_skus(
+    offers: dict[str, Any],
+    *,
+    only_skus: set[str] | None = None,
+    skip_skus: set[str] | None = None,
+) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Runnable SKUs filtered by --only-sku and --skip-sku."""
+    skip = skip_skus or set()
+    for sku_id, block in iter_runnable_skus(offers):
+        if only_skus and sku_id not in only_skus:
+            continue
+        if sku_id in skip:
+            continue
+        yield sku_id, block
+
+
+def count_scheduled_skus(
+    offers: dict[str, Any],
+    *,
+    only_skus: set[str] | None = None,
+    skip_skus: set[str] | None = None,
+) -> int:
+    return sum(1 for _ in iter_scheduled_skus(offers, only_skus=only_skus, skip_skus=skip_skus))
