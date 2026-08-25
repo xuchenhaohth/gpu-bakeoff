@@ -44,7 +44,7 @@ for k in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_rsa.pub"; do
   fi
 done
 if [[ -z "$PUB" ]]; then
-  warn "No SSH public key — team accounts copy via execute; personal: ssh-keygen -t ed25519 && vastai create ssh-key \"$(cat ~/.ssh/id_ed25519.pub)\""
+  die "No SSH public key — ssh-keygen -t ed25519 && vastai create ssh-key \"$(cat ~/.ssh/id_ed25519.pub)\". Team API keys cannot register keys; use a personal key."
 fi
 
 # API key auth

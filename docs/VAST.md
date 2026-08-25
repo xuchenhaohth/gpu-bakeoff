@@ -29,11 +29,11 @@ Credits: https://cloud.vast.ai/billing/
 
 Spend cap in `.env`: `MAX_USD=180`. The bake-off script refuses if projected serial spend exceeds cap (`sum(dph × MATRIX_TIMEOUT_SEC)` per SKU, default 8 h each). Only one instance runs at a time.
 
-All orchestrator scripts read `VAST_API_KEY` from `.env` and pass `--api-key` to every `vastai` call (including `copy` and `execute`).
+All orchestrator scripts read `VAST_API_KEY` from `.env` and pass `--api-key` to every `vastai` call (including `copy`).
 
-**SSH:** There is no instance password. `vastai copy` authenticates as `vastai_<account>@<proxy>` using **account** SSH keys.
+**SSH is required.** There is no instance password. `vastai copy` and the matrix start/poll path authenticate as `root@<ssh_host>` using **account** SSH keys.
 
-Team API keys cannot store SSH keys (`Team SSH keys are not supported`). In that case the orchestrator copies the harness and results through `vastai execute` instead of rsync.
+Team API keys cannot store SSH keys (`Team SSH keys are not supported`). The orchestrator **aborts** in that case — it does **not** fall back to `vastai execute`. That API is not a general shell: on CLI 1.5.x it only allows `ls` / `rm` / `du`, and only on **stopped** instances (`Execute command only avail on stopped instances. Use ssh to run commands on running instances.`). Using it as a copy/start fallback silently billed an idle GPU.
 
 If you are on a personal account, register the local pubkey **before** launch:
 
@@ -78,6 +78,27 @@ Launch flags used:
 
 Matrix completion is detected via `/workspace/bakeoff/results/DONE` on the remote instance (`MATRIX_TIMEOUT_SEC`, default 8 h).
 
+The harness is started over SSH (`setsid nohup …`). While it runs, the orchestrator polls `/workspace/bakeoff/results/PROGRESS.json` over SSH every 30s. If nothing appears within `MATRIX_STARTUP_GRACE_SEC` (default 180s), the SKU aborts instead of waiting the full 8 h.
+
+```text
+instance 48605233: matrix 4/14 ideogram_4/img02 timed  12m elapsed  7h47m left  last=ideogram_4/img01 Quantized 12.3s
+instance 48605233: prefetch 2/6 flux2_dev  4m elapsed  7h55m left
+```
+
+Phases: `onstart` → `install` → `prefetch` → `matrix` → `report` → `done`.
+
+Manual checks on a live instance (SSH, not `vastai execute`):
+
+```bash
+url=$(vastai ssh-url <INSTANCE_ID>)   # ssh://root@host:port
+# ssh -p <port> -i ~/.ssh/id_ed25519 root@<host> …
+ssh … 'cat /workspace/bakeoff/results/PROGRESS.json'
+ssh … 'tail -n 80 /workspace/bakeoff/run.log'
+ssh … 'test -f /workspace/bakeoff/results/DONE && echo DONE || echo not-done'
+```
+
+Harness stdout is redirected to `/workspace/bakeoff/run.log` — **not** `vastai logs` (that shows container bootstrap, not the matrix runner).
+
 ## Stale instances (reuse vs destroy)
 
 On each run, before launching:
@@ -100,7 +121,7 @@ State is saved to `config/instances.json` immediately after resolve/launch so `-
 vastai copy local:./scripts/remote/ <INSTANCE_ID>:/workspace/bakeoff/
 ```
 
-The orchestrator tries rsync with `--identity` and SSH `BatchMode` (fails instead of prompting for a password). If the account has no SSH keys (typical for **team** API keys), it copies via `vastai execute`.
+The orchestrator copies with rsync (`vastai copy --identity`, SSH `BatchMode`). If SSH keys are missing or the API key is a team key, preflight **exits** instead of launching.
 
 **Never** copy to `/root` or `/` — breaks SSH on some hosts.
 
@@ -136,8 +157,11 @@ If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 | `401 Unauthorized` | Re-run `vastai set api-key` |
 | `Insufficient credits` | Top up billing |
 | Repeated `loading` during wait | Normal image pull / container start — watch `status_msg` and elapsed time in wait log; timeout is `WAIT_TIMEOUT_SEC` (25 min) then backup offer |
-| SSH timeout | Wait longer or destroy and pick higher `reliability` offer |
-| `vastai_kaalia@…'s password:` | No password exists. Team API keys cannot register SSH keys — re-run bakeoff (copy falls back to `vastai execute`). On a personal account: `vastai create ssh-key "$(cat ~/.ssh/id_ed25519.pub)"` then `vastai attach ssh <id> ~/.ssh/id_ed25519.pub` |
+| Repeated `matrix running (running)` or opaque poll lines | Old harness without `PROGRESS.json` — tail `run.log` manually, or re-push harness on next SKU. With current harness, poll lines show phase/job/model |
+| Repeated `waiting` then abort `no_progress` | Harness did not write `PROGRESS.json` within `MATRIX_STARTUP_GRACE_SEC` (default 180s) — check SSH start, or destroy and retry |
+| SSH timeout / connection refused | Wait for the container, attach the key, or destroy and pick higher `reliability` |
+| `vastai_kaalia@…'s password:` | No password exists. Team API keys cannot register SSH keys — switch to a **personal** API key, then `vastai create ssh-key "$(cat ~/.ssh/id_ed25519.pub)"` and `vastai attach ssh <id> ~/.ssh/id_ed25519.pub` |
+| `Team SSH keys are not supported` | Preflight abort. Use a personal API key at https://cloud.vast.ai/manage-keys/ |
 | CUDA / sm_120 errors | Wrong image or driver on host — next candidate |
 | OOM on Hunyuan | Check **host RAM** in CSV, not just VRAM |
 | Interrupted run still billing | `uv run python scripts/02_run_bakeoff.py --destroy-only` |

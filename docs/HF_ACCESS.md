@@ -34,8 +34,11 @@ uv run python -c "from huggingface_hub import HfApi; print(HfApi().whoami(token=
 
 ## Remote verify (after instance running)
 
+SSH into the instance (not `vastai execute` — that API is not a shell on running VMs):
+
 ```bash
-vastai execute <INSTANCE_ID> "huggingface-cli whoami"
+vastai ssh-url <INSTANCE_ID>    # prints ssh://root@host:port
+ssh -p <port> -i ~/.ssh/id_ed25519 root@<host> huggingface-cli whoami
 ```
 
 ## Ideogram licence

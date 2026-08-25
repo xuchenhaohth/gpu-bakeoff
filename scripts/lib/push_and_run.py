@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""Copy remote harness to a Vast instance and start the matrix runner."""
+"""Copy remote harness to a Vast instance and start the matrix runner over SSH."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from lib.ssh_preflight import attach_instance_ssh
-from lib.vast import ROOT, vastai_copy, vastai_execute
+from lib.ssh_remote import fetch_ssh_url, ssh_run
+from lib.vast import ROOT, vastai_copy
 
 REMOTE_DIR = ROOT / "scripts" / "remote"
 CONFIG_DIR = ROOT / "config"
 
 MATRIX_START_CMD = (
     "chmod +x /workspace/bakeoff/onstart.sh /workspace/bakeoff/install_stack.sh && "
+    "mkdir -p /workspace/bakeoff/results && "
     "cd /workspace/bakeoff && "
-    "nohup bash -lc './onstart.sh && python3 run_matrix.py; "
+    "setsid nohup bash -lc './onstart.sh && python3 run_matrix.py; "
     "echo $? > /workspace/bakeoff/results/DONE' "
-    ">/workspace/bakeoff/run.log 2>&1 &"
+    ">/workspace/bakeoff/run.log 2>&1 < /dev/null &"
 )
 
 
@@ -32,6 +34,11 @@ def push_and_run(instance_id: int, sku_id: str = "") -> None:
     attach_instance_ssh(instance_id)
     copy_to(instance_id, REMOTE_DIR, "/workspace/bakeoff/")
     copy_to(instance_id, CONFIG_DIR, "/workspace/bakeoff/config/")
-    print(f"Execute on {instance_id}{label}: {MATRIX_START_CMD[:80]}...")
-    vastai_execute(instance_id, MATRIX_START_CMD)
-    print(f"Started matrix on instance {instance_id}{label} — tail: vastai logs {instance_id}")
+    print(f"SSH start on {instance_id}{label}: {MATRIX_START_CMD[:80]}...")
+    ssh_run(instance_id, MATRIX_START_CMD, check=True, timeout=90)
+    ssh_hint = fetch_ssh_url(instance_id)
+    print(
+        f"Started matrix on instance {instance_id}{label} — "
+        f"progress polls PROGRESS.json over SSH; manual: "
+        f"ssh to {ssh_hint} then tail -n 80 /workspace/bakeoff/run.log"
+    )

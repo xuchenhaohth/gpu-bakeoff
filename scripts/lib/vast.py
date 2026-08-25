@@ -75,49 +75,70 @@ def _vastai_cmd(*args: str, raw: bool = True) -> list[str]:
     return cmd
 
 
+def _try_json(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+def vast_cli_error(stdout: str, stderr: str) -> str | None:
+    """Detect Vast CLI/API failures even when the process exits 0.
+
+    The CLI prints `Failed with error N: …` (and JSON `{"error": true, …}` with
+    `--raw`) to stderr and often still exits 0. Success payloads that happen to
+    be JSON (e.g. PROGRESS.json) are not treated as errors.
+    """
+    err_text = (stderr or "").strip()
+    out_text = (stdout or "").strip()
+
+    parsed_err = _try_json(err_text)
+    if isinstance(parsed_err, dict) and (
+        parsed_err.get("error") or parsed_err.get("success") is False
+    ):
+        return str(parsed_err.get("msg") or parsed_err.get("message") or err_text)
+
+    if err_text.lower().startswith("failed with error"):
+        return err_text
+
+    parsed_out = _try_json(out_text)
+    if isinstance(parsed_out, dict) and (
+        parsed_out.get("error") is True or parsed_out.get("success") is False
+    ):
+        return str(parsed_out.get("msg") or parsed_out.get("message") or out_text)
+    return None
+
+
 def vastai(*args: str, check: bool = True) -> Any:
     proc = subprocess.run(_vastai_cmd(*args), capture_output=True, text=True)
     stdout = proc.stdout.strip()
     stderr = proc.stderr.strip()
     payload = stdout or stderr
+    api_err = vast_cli_error(stdout, stderr)
 
-    if proc.returncode != 0:
+    if proc.returncode != 0 or api_err:
+        msg = api_err or f"exit {proc.returncode}"
         if check:
             raise RuntimeError(
-                f"vastai failed ({proc.returncode}): {' '.join(args)}\n"
+                f"vastai failed ({msg}): {' '.join(args)}\n"
                 f"stderr: {stderr}\nstdout: {stdout}"
             )
         if payload:
-            try:
-                return json.loads(payload)
-            except json.JSONDecodeError:
-                return {"success": False, "msg": payload}
+            parsed = _try_json(payload)
+            if parsed is not None:
+                return parsed
+            return {"success": False, "msg": payload}
         return None
 
     if not payload:
         return None
-    try:
-        result = json.loads(payload)
-    except json.JSONDecodeError:
+    parsed = _try_json(payload)
+    if parsed is None:
         return payload
-
-    if isinstance(result, dict) and result.get("error"):
-        if check:
-            raise RuntimeError(
-                f"vastai API error: {' '.join(args)}\n"
-                f"response: {payload}"
-            )
-        return result
-    return result
+    return parsed
 
 
 def vastai_copy(src: str, dst: str, check: bool = True) -> None:
-    from lib.execute_transfer import copy_via_execute, execute_copy_enabled
-
-    if execute_copy_enabled():
-        copy_via_execute(src, dst)
-        return
-
     args: list[str] = ["copy", src, dst]
     identity = local_ssh_identity()
     if identity is not None:
@@ -129,21 +150,26 @@ def vastai_copy(src: str, dst: str, check: bool = True) -> None:
         stdin=subprocess.DEVNULL,
         env=_copy_env(),
     )
-    if proc.returncode == 0:
+    if proc.returncode == 0 and not vast_cli_error(proc.stdout, proc.stderr):
         return
+    err = vast_cli_error(proc.stdout, proc.stderr)
     lowered = f"{proc.stderr}\n{proc.stdout}".lower()
-    if any(
+    ssh_auth = any(
         token in lowered
         for token in ("permission denied", "password", "authentication failed", "publickey")
-    ):
-        print("SSH copy failed (Vast has no VM password); falling back to execute transfer")
-        os.environ["VAST_COPY_VIA_EXECUTE"] = "1"
-        copy_via_execute(src, dst)
-        return
+    )
+    hint = ""
+    if ssh_auth:
+        hint = (
+            "\nSSH copy failed — Vast has no VM password. "
+            "Use a personal API key and register ~/.ssh/id_ed25519.pub at "
+            "https://cloud.vast.ai/manage-keys/"
+        )
     if check:
         raise RuntimeError(
             f"vastai copy failed ({proc.returncode}): {src} -> {dst}\n"
-            f"stderr: {proc.stderr}\nstdout: {proc.stdout}"
+            f"{err or ''}\n"
+            f"stderr: {proc.stderr}\nstdout: {proc.stdout}{hint}"
         )
 
 
@@ -152,16 +178,25 @@ def vastai_execute(instance_id: int, cmd: str, check: bool = True) -> None:
 
 
 def vastai_execute_output(instance_id: int, cmd: str, check: bool = False) -> str:
+    """Run `vastai execute` and return stdout.
+
+    Not usable on a *running* instance (API 400: use SSH). The CLI often exits 0
+    on that error — this helper still treats stderr/JSON errors as failure.
+    """
     proc = subprocess.run(
-        _vastai_cmd("execute", str(instance_id), cmd, raw=False),
+        _vastai_cmd("execute", str(instance_id), cmd),
         capture_output=True,
         text=True,
     )
-    if proc.returncode != 0 and check:
-        raise RuntimeError(
-            f"vastai execute failed ({proc.returncode}) on {instance_id}\n"
-            f"stderr: {proc.stderr}\nstdout: {proc.stdout}"
-        )
+    err = vast_cli_error(proc.stdout, proc.stderr)
+    if proc.returncode != 0 or err:
+        msg = err or f"exit {proc.returncode}"
+        if check:
+            raise RuntimeError(
+                f"vastai execute failed on {instance_id}: {msg}\n"
+                f"stderr: {proc.stderr}\nstdout: {proc.stdout}"
+            )
+        return ""
     return proc.stdout.strip()
 
 

@@ -14,6 +14,9 @@ uv run python -m compileall -q scripts/
 echo "== mypy =="
 uv run mypy scripts/
 
+echo "== unittest =="
+PYTHONPATH="$ROOT/scripts" uv run python -m unittest test_orchestrator -q
+
 echo "== dry-run smoke =="
 uv run python scripts/dry_run_local.py
 
