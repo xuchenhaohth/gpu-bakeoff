@@ -4,8 +4,9 @@ Complete **before** `02_run_bakeoff.py` (remote prefetch runs on each instance).
 
 ## Token
 
-1. Create token at https://huggingface.co/settings/tokens (read access).
+1. Create token at https://huggingface.co/settings/tokens with **write** access (read-only tokens cannot create the results dataset or upload artifacts).
 2. Set in `.env`: `HF_TOKEN=hf_...`
+3. Optional: `HF_RESULTS_REPO=your-username/gpu-bakeoff-results` (default: `{hf_user}/gpu-bakeoff-results`)
 
 ## Accept gated model licenses
 
@@ -24,12 +25,24 @@ Non-gated but required downloads:
 - EricRollei/HunyuanImage-3-NF4-v2
 - prometheusAIR/DeepSeek-V4-Flash-0731-GGUF
 
+## Pull results from Hugging Face (no GPU)
+
+Team-key runs upload to `{hf_user}/gpu-bakeoff-results` during the matrix. To fetch without launching instances:
+
+```bash
+uv run python scripts/03_pull_hf_results.py              # all SKUs on HF
+uv run python scripts/03_pull_hf_results.py --sku rtx5090_1x
+```
+
+Requires a **write-capable** `HF_TOKEN` for uploads; read access is enough for pull once the dataset exists.
+
 ## Verify locally
 
 ```bash
 source .env  # or export HF_TOKEN
 uv sync
 uv run python -c "from huggingface_hub import HfApi; print(HfApi().whoami(token='$HF_TOKEN'))"
+PYTHONPATH=scripts uv run python -c "from lib.vast import load_dotenv; from lib.hf_results import ensure_hf_results_repo; load_dotenv(); print('results repo:', ensure_hf_results_repo())"
 ```
 
 ## Remote verify (after instance running)

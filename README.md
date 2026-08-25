@@ -8,7 +8,7 @@ Serial **Vast.ai** evidence run for a boss-facing hardware × model fit matrix. 
 
 1. [Vast.ai account](https://cloud.vast.ai/) with **≥ US$50** credit (plan assumes ~US$80–150 burn).
 2. API key: [console.vast.ai/manage-keys](https://console.vast.ai/manage-keys/)
-3. Hugging Face token with **gated licenses accepted** for Ideogram 4, MiniMax H3, FLUX.2-dev.
+3. Hugging Face token with **write** access and **gated licenses accepted** for Ideogram 4, MiniMax H3, FLUX.2-dev.
 4. [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
 5. `vastai` CLI installed (see below).
 6. **Personal** Vast account: SSH key at `~/.ssh/id_ed25519.pub` (`vastai create ssh-key`). **Team** API keys use onstart transport instead (public git clone at boot + Hugging Face for results) — no SSH required.
@@ -45,6 +45,7 @@ uv run python scripts/dry_run_local.py
 | Check env | `./scripts/00_check_env.sh` |
 | Discover offers | `uv run python scripts/01_search_offers.py` |
 | Serial bake-off (one SKU at a time) | `uv run python scripts/02_run_bakeoff.py` |
+| Pull HF results only (no GPU) | `uv run python scripts/03_pull_hf_results.py --sku <sku_id>` |
 | Boss pack | `uv run python scripts/fill_boss_pack.py` then review `docs/procurement/BOSS_PACK.md` |
 
 `02_run_bakeoff.py` runs the full per-SKU lifecycle: reconcile stale instances → launch or reuse → wait → matrix → pull → destroy, then moves to the next SKU. Each SKU can run up to `MATRIX_TIMEOUT_SEC` (default 8 h). Console output shows transport, install sub-steps (`pip_comfyui`, etc.), `(unchanged Nm)` during long pip, and matrix job index — see [docs/VAST.md](docs/VAST.md).
@@ -53,15 +54,18 @@ uv run python scripts/dry_run_local.py
 
 **Interrupt cleanup:** `uv run python scripts/02_run_bakeoff.py --destroy-only`
 
+**Skip SKUs:** `uv run python scripts/02_run_bakeoff.py --skip-sku dgx_spark_gb10` (also skips SKUs that already have `results/{sku}/matrix.csv`)
+
 **Resume after interrupt:** Re-run `02_run_bakeoff.py` — healthy instances are reused (matrix wait/pull); dead orphans are destroyed at startup. See [docs/VAST.md](docs/VAST.md#stale-instances-reuse-vs-destroy).
 
 ## Outputs
 
 | Path | Description |
 |------|-------------|
-| `results/matrix.csv` | One row per gpu × model × layer × prompt (from Vast pull) |
-| `results/report.html` | Gallery + summary tables |
-| `results/artifacts/` | PNG/MP4 samples (gitignored bulk) |
+| `results/matrix.csv` | Merged rows from all SKUs (from Vast pull) |
+| `results/report.html` | Gallery + summary tables (updates during live pull) |
+| `results/{sku}/matrix.csv` | Per-SKU metrics CSV |
+| `results/{sku}/artifacts/` | Per-job PNG/MP4 and LLM `.txt` transcripts |
 | `docs/FIT_MATRIX.md` | Human-readable matrix (auto-updated by pull step) |
 | `docs/procurement/BOSS_PACK.md` | One-pager for management |
 

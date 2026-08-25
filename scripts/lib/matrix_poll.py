@@ -106,6 +106,31 @@ def parse_logs_status(log_text: str) -> str:
     return parse_logs_detail(log_text)[0]
 
 
+def _try_live_pull(
+    instance_id: int,
+    sku_id: str,
+    raw: str,
+    last_pulled_job: int,
+) -> int:
+    """Pull results locally when a job completes; return updated last_pulled_job."""
+    from lib.pull_results import live_pull_sku
+
+    should_pull, new_last = _should_live_pull(raw, last_pulled_job)
+    if raw.startswith("DONE:"):
+        should_pull = True
+    if not should_pull:
+        return last_pulled_job
+    try:
+        live_pull_sku(instance_id, sku_id)
+        updated = max(last_pulled_job, new_last)
+        label = "done" if raw.startswith("DONE:") else f"job {updated}"
+        print(f"  instance {instance_id}: live pull {sku_id} ({label})")
+        return updated
+    except Exception as exc:
+        print(f"  instance {instance_id}: live pull failed: {exc}")
+        return last_pulled_job
+
+
 def parse_logs_detail(log_text: str) -> tuple[str, str]:
     """Return (status_raw, hint) from container logs."""
     last_progress = ""
@@ -272,7 +297,37 @@ def _should_print_progress(
     return (now - last_print_time) >= KEEPALIVE_SEC
 
 
-def wait_for_matrix(instance_id: int) -> str:
+def _job_index_from_raw(raw: str) -> int | None:
+    text = raw.strip()
+    if text.startswith("{"):
+        try:
+            data: dict[str, Any] = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        ji = data.get("job_index")
+        return int(ji) if ji is not None else None
+    if text.startswith("log="):
+        text = text[4:].strip()
+    match = re.search(r"matrix\s+(\d+)/\d+", text)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _should_live_pull(raw: str, last_pulled_job: int) -> tuple[bool, int]:
+    """True when a completed job or upload warrants a local pull."""
+    ji = _job_index_from_raw(raw)
+    if ji is None or ji <= last_pulled_job:
+        if "upload" in raw.lower() and last_pulled_job > 0:
+            return True, last_pulled_job
+        return False, last_pulled_job
+    lowered = raw.lower()
+    if "done" in lowered or "upload" in lowered or "last=" in lowered:
+        return True, ji
+    return False, last_pulled_job
+
+
+def wait_for_matrix(instance_id: int, sku_id: str = "") -> str:
     """Return 'done', a fail status, or 'timeout'."""
     start = time.time()
     deadline = start + MATRIX_TIMEOUT_SEC
@@ -281,6 +336,7 @@ def wait_for_matrix(instance_id: int) -> str:
     last_status_key = ""
     last_print_key = ""
     last_print_time = 0.0
+    last_pulled_job = 0
 
     while time.time() < deadline:
         now = time.time()
@@ -309,8 +365,13 @@ def wait_for_matrix(instance_id: int) -> str:
 
         if raw.startswith("DONE:"):
             code = raw.split(":", 1)[1].strip()
+            if sku_id:
+                last_pulled_job = _try_live_pull(instance_id, sku_id, raw, last_pulled_job)
             print(f"  instance {instance_id} matrix finished (exit {code or '?'})")
             return "done"
+
+        if sku_id:
+            last_pulled_job = _try_live_pull(instance_id, sku_id, raw, last_pulled_job)
 
         status_key = raw.strip()
         if status_key != last_status_key:

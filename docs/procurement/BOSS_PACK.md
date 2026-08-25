@@ -87,5 +87,5 @@ _TBD: e.g. “Request quote from Scorptec for Tier 2 workstation” or “Pilot 
 ## Appendix
 
 - Full CSV: `results/matrix.csv`
-- Sample outputs: `results/artifacts/`
+- Sample outputs: `results/{sku}/artifacts/` (images, video, LLM `.txt`)
 - Methodology: [README.md](../../README.md)

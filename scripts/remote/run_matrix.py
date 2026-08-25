@@ -14,15 +14,17 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, TextIO
 
+from artifacts import copy_comfy_output, write_transcript
 from comfy_client import run_image_job, run_video_job
 from llm_client import llm_extra_args, run_llm_job
-from paths import REMOTE_ROOT, RESULTS_DIR, load_config, resolve_asset
+from paths import ARTIFACTS_DIR, REMOTE_ROOT, RESULTS_DIR, load_config, resolve_asset
 from progress import JOB_TOTAL, format_last_result, write_progress
 from sampler import timed_run
+from upload_results import upload_job
 
 SKU = os.environ.get("BAKEOFF_SKU", "unknown")
 RESULTS_DIR.mkdir(exist_ok=True)
-(REMOTE_ROOT / "artifacts").mkdir(exist_ok=True)
+ARTIFACTS_DIR.mkdir(exist_ok=True)
 
 IMAGE_MODELS = ["ideogram_4", "flux2_dev", "hunyuan_image_3"]
 VIDEO_MODELS = ["minimax_h3"]
@@ -55,6 +57,8 @@ FIELDNAMES = [
     "peak_mean_cpu_pct",
     "error",
     "note",
+    "artifact_path",
+    "transcript_path",
 ]
 
 
@@ -142,6 +146,8 @@ def row_base(model_key: str, prompt_id: str, precision: str, runtime: str) -> di
         "pass": True,
         "oom": False,
         "fit_status": "",
+        "artifact_path": "",
+        "transcript_path": "",
     }
 
 
@@ -149,6 +155,24 @@ def apply_peak(row: dict, peak: dict) -> None:
     for k, v in peak.items():
         if k not in ("samples", "wall_sec", "error"):
             row[f"peak_{k}"] = v
+
+
+def attach_comfy_artifact(row: dict[str, Any], job: dict[str, Any]) -> None:
+    model_key = str(row.get("model", ""))
+    prompt_id = str(row.get("prompt_id", ""))
+    comfy_rel = job.get("artifact") or ""
+    row["artifact_path"] = copy_comfy_output(comfy_rel, model_key, prompt_id)
+
+
+def attach_llm_transcript(row: dict[str, Any], metrics: dict[str, Any]) -> None:
+    model_key = str(row.get("model", ""))
+    prompt_id = str(row.get("prompt_id", ""))
+    row["transcript_path"] = write_transcript(
+        model_key,
+        prompt_id,
+        metrics.get("content"),
+        metrics.get("note"),
+    )
 
 
 def write_row(
@@ -167,6 +191,11 @@ def write_row(
         prompt_id=str(row.get("prompt_id", "")),
         stage="done",
         last_result=format_last_result(row),
+    )
+    upload_job(
+        SKU,
+        str(row.get("artifact_path") or ""),
+        str(row.get("transcript_path") or ""),
     )
 
 
@@ -248,6 +277,7 @@ def run_image_matrix(
             r["error"] = last_job["error"]
         if last_job.get("note"):
             r["note"] = last_job["note"]
+        attach_comfy_artifact(r, last_job)
         write_row(writer, csv_file, tracker, r)
 
 
@@ -307,6 +337,7 @@ def run_video_matrix(
     if last_job.get("error"):
         r["pass"] = False
         r["error"] = last_job["error"]
+    attach_comfy_artifact(r, last_job)
     write_row(writer, csv_file, tracker, r)
 
 
@@ -332,6 +363,7 @@ def run_llm_matrix(
             r["pass"] = False
             r["fit_status"] = "No"
             r["error"] = reason
+            r["transcript_path"] = write_transcript(model_key, prompt_id, None, reason)
             write_row(writer, csv_file, tracker, r)
         return
 
@@ -372,7 +404,7 @@ def run_llm_matrix(
         elapsed, peak = timed_run(job, interval=protocol.get("sampler_interval_sec", 1.5), unified=unified)
         r = row_base(model_key, prompt_id, precision, runtime)
         r["wall_sec"] = round(elapsed, 3)
-        r.update({k: v for k, v in metrics.items() if k not in ("pass",)})
+        r.update({k: v for k, v in metrics.items() if k not in ("pass", "content")})
         apply_peak(r, peak)
         if metrics.get("error"):
             r["pass"] = False
@@ -383,6 +415,7 @@ def run_llm_matrix(
             r["fit_status"] = classify_fit(status, peak, protocol, "llm", metrics)
         if metrics.get("note"):
             r["note"] = metrics["note"]
+        attach_llm_transcript(r, metrics)
         write_row(writer, csv_file, tracker, r)
 
 
@@ -424,7 +457,14 @@ def main() -> int:
     print(f"Wrote {out_csv}")
     write_progress("report", message="generating report")
     subprocess.run(
-        [sys.executable, str(REMOTE_ROOT / "report.py"), "--csv", str(out_csv)],
+        [
+            sys.executable,
+            str(REMOTE_ROOT / "report.py"),
+            "--csv",
+            str(out_csv),
+            "--results-root",
+            str(REMOTE_ROOT),
+        ],
         check=False,
     )
     write_progress("done", message="matrix complete")

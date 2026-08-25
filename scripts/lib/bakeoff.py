@@ -14,7 +14,7 @@ from lib.instance_lifecycle import (
     resolve_sku_instance,
 )
 from lib.matrix_poll import wait_for_matrix
-from lib.pull_results import merge_results, pull_sku
+from lib.pull_results import merge_results, pull_sku, sku_has_results
 from lib.push_and_run import push_and_run
 from lib.sku_blocks import count_runnable_skus, iter_runnable_skus
 from lib.ssh_preflight import ensure_ssh_ready
@@ -82,13 +82,20 @@ def run_one_sku(
     mode: ResumeMode = "fresh",
 ) -> tuple[bool, dict[str, Any]]:
     """Wait, run matrix, pull results, and destroy one SKU instance."""
+    pulled_ok = False
     if mode == "pull_only":
         iid = int(rec["instance_id"])
         try:
             pull_sku(iid, sku_id)
+            pulled_ok = True
             return True, rec
+        except Exception as exc:
+            print(f"  {sku_id}: pull failed — instance kept: {exc}")
+            rec["error"] = str(exc)
+            return False, rec
         finally:
-            destroy_instance(rec, sku_id)
+            if pulled_ok:
+                destroy_instance(rec, sku_id)
 
     running = rec
     if mode in ("fresh", "wait"):
@@ -103,19 +110,26 @@ def run_one_sku(
     try:
         if mode in ("fresh", "wait", "push_and_run") and not use_onstart_transport():
             push_and_run(iid, sku_id)
-        running["matrix_status"] = wait_for_matrix(iid)
+        running["matrix_status"] = wait_for_matrix(iid, sku_id)
         pull_via = "Hugging Face" if use_onstart_transport() else "SSH"
         print(f"  {sku_id}: matrix {running['matrix_status']} — pulling results via {pull_via}")
         pull_sku(iid, sku_id)
+        pulled_ok = True
         return True, running
+    except Exception as exc:
+        print(f"  {sku_id}: pull failed — instance {iid} kept for retry: {exc}")
+        running["error"] = str(exc)
+        return False, running
     finally:
-        destroy_instance(running, sku_id)
+        if pulled_ok:
+            destroy_instance(running, sku_id)
 
 
-def run_serial() -> int:
+def run_serial(skip_skus: set[str] | None = None) -> int:
     if not OFFERS_PATH.exists():
         raise SystemExit(f"Missing {OFFERS_PATH} — run 01_search_offers.py first")
 
+    skip = skip_skus or set()
     offers = read_yaml(OFFERS_PATH)
     matrix = read_yaml(MATRIX_PATH)
     matrix_skus = matrix.get("skus", {})
@@ -140,6 +154,13 @@ def run_serial() -> int:
                 save_instances(state)
             else:
                 raise SystemExit(f"No candidates for {sku_id}")
+            continue
+
+        if sku_id in skip:
+            print(f"Skipping {sku_id} (--skip-sku)")
+            continue
+        if sku_has_results(sku_id):
+            print(f"Skipping {sku_id} (already has results)")
             continue
 
         attempted += 1

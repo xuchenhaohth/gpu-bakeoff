@@ -17,3 +17,5 @@
 | [HF_ACCESS.md](HF_ACCESS.md) | Hugging Face gated model access |
 | [STACK.md](STACK.md) | ComfyUI / vLLM / llama.cpp versions on instances |
 | [FIT_MATRIX.md](FIT_MATRIX.md) | Human-readable fit matrix (auto-updated from results) |
+
+Pull HF results without Vast: `uv run python scripts/03_pull_hf_results.py`

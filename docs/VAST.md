@@ -91,6 +91,14 @@ Launch flags used:
 
 Matrix completion: SSH transport reads `/workspace/bakeoff/results/DONE`; onstart transport watches logs for `BAKEOFF_DONE exit=N` after HF upload (`MATRIX_TIMEOUT_SEC`, default 8 h).
 
+**Live results:** After each matrix job, the remote harness copies image/video files and LLM transcripts into `artifacts/`, uploads to Hugging Face (team key), and the local poller pulls `results/{sku}/` when `job_index` advances. Open `results/report.html` while a SKU is still running. Instances are destroyed only after `results/{sku}/matrix.csv` exists locally (pull failure keeps the VM for retry). SKUs with existing `results/{sku}/matrix.csv` are skipped on re-run; use `--skip-sku` to force skip.
+
+Fetch existing HF results without launching GPUs:
+
+```bash
+uv run python scripts/03_pull_hf_results.py --sku rtx5090_1x
+```
+
 Onstart progress (from `vastai logs` and local poller):
 
 ```text

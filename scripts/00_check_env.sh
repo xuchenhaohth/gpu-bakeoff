@@ -62,6 +62,16 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
   warn "HF_TOKEN empty — gated models will fail prefetch"
 else
   echo "OK  HF_TOKEN set (${#HF_TOKEN} chars)"
+  if PYTHONPATH="$ROOT/scripts" uv run python -c "
+from lib.vast import load_dotenv
+from lib.hf_results import ensure_hf_results_repo
+load_dotenv()
+print('OK  HF results dataset:', ensure_hf_results_repo())
+" 2>/dev/null; then
+    :
+  else
+    warn "HF_TOKEN cannot create/write results dataset — use a write-capable token"
+  fi
 fi
 
 if [[ "$fail" -eq 0 ]]; then
@@ -77,7 +87,7 @@ MIN="${MIN_CREDIT_USD:-50}"
 MATRIX="${MATRIX_TIMEOUT_SEC:-28800}"
 echo "OK  spend cap MAX_USD=$MAX MIN_CREDIT_USD=$MIN MATRIX_TIMEOUT_SEC=$MATRIX"
 
-mkdir -p results results/artifacts config
+mkdir -p results config
 echo "OK  results/ and config/ ready"
 
 if [[ "$fail" -ne 0 ]]; then

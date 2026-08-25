@@ -168,6 +168,7 @@ def chat_openai(url: str, model: str, system: str, user: str, max_tokens: int = 
         "output_tokens": out_toks,
         "decode_tps": round(decode_tps, 2),
         "content_len": len(content),
+        "content": content,
         "status": "native",
         "mode": "openai_stream",
     }
