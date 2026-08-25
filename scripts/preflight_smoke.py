@@ -18,6 +18,7 @@ from lib.vast import account_credit, load_dotenv, read_yaml  # noqa: E402
 OFFERS_PATH = VAST_ROOT / "config" / "offers.yaml"
 INSTANCES_PATH = VAST_ROOT / "config" / "instances.json"
 MODELS_PATH = VAST_ROOT / "config" / "models.yaml"
+MATRIX_PATH = VAST_ROOT / "config" / "matrix.yaml"
 
 
 def check_credit(min_credit: float) -> tuple[bool, str]:
@@ -83,21 +84,39 @@ def check_git_push() -> tuple[bool, str]:
 
 
 def check_stale_instances() -> tuple[bool, str]:
-    if not INSTANCES_PATH.is_file():
-        return True, "No instances.json"
-    try:
-        data = json.loads(INSTANCES_PATH.read_text())
-        instances = data.get("instances") or {}
-        active = [
-            sku
-            for sku, rec in instances.items()
-            if isinstance(rec, dict) and rec.get("instance_id") and not rec.get("skipped")
-        ]
-        if active:
-            return False, f"Active instances in instances.json: {', '.join(active)} — run --destroy-only"
-    except Exception as exc:
-        return True, f"instances.json unreadable: {exc}"
-    return True, "No stale instances in instances.json"
+    from lib.destroy import instance_rec_is_active  # noqa: PLC0415
+    from lib.instance_lifecycle import bakeoff_labels, list_account_instances  # noqa: PLC0415
+
+    json_active: list[str] = []
+    if INSTANCES_PATH.is_file():
+        try:
+            data = json.loads(INSTANCES_PATH.read_text())
+            instances = data.get("instances") or {}
+            json_active = [
+                sku for sku, rec in instances.items() if instance_rec_is_active(rec)
+            ]
+        except Exception as exc:
+            return True, f"instances.json unreadable: {exc}"
+
+    api_active: list[str] = []
+    if MATRIX_PATH.is_file():
+        matrix_skus = read_yaml(MATRIX_PATH).get("skus", {})
+        labels = bakeoff_labels(matrix_skus)
+        for inst in list_account_instances():
+            label = inst.get("label") or ""
+            if label in labels:
+                iid = inst.get("id") or inst.get("new_contract")
+                api_active.append(f"{label}({iid})")
+
+    if json_active:
+        return False, (
+            f"Active instances in instances.json: {', '.join(json_active)} — run --destroy-only"
+        )
+    if api_active:
+        return False, (
+            f"Live bakeoff instances on Vast: {', '.join(api_active)} — run --destroy-only"
+        )
+    return True, "No stale instances in instances.json or on Vast"
 
 
 def main() -> int:

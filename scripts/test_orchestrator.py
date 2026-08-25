@@ -670,5 +670,100 @@ class ResumeMatrixTests(unittest.TestCase):
         destroy.assert_not_called()
 
 
+class InstanceRecActiveTests(unittest.TestCase):
+    def test_instance_rec_is_active(self) -> None:
+        from lib.destroy import instance_rec_is_active
+
+        self.assertTrue(instance_rec_is_active({"instance_id": 123}))
+        self.assertFalse(
+            instance_rec_is_active(
+                {"instance_id": 123, "destroyed": True, "actual_status": "destroyed"}
+            )
+        )
+        self.assertFalse(instance_rec_is_active({"instance_id": 123, "skipped": True}))
+        self.assertFalse(instance_rec_is_active({"destroyed": True}))
+
+    def test_prune_inactive_instances(self) -> None:
+        from lib.destroy import prune_inactive_instances
+
+        state = {
+            "instances": {
+                "a": {"instance_id": 1, "destroyed": True},
+                "b": {"instance_id": 2},
+                "c": {"skipped": True, "instance_id": 3},
+            },
+            "launched_at": "t",
+        }
+        pruned = prune_inactive_instances(state)
+        self.assertEqual(pruned, 2)
+        instances = state["instances"]
+        assert isinstance(instances, dict)
+        self.assertEqual(list(instances.keys()), ["b"])
+
+    def test_destroy_all_leftovers_prunes_json(self) -> None:
+        from unittest.mock import patch
+
+        from lib.destroy import destroy_all_leftovers
+
+        state = {
+            "instances": {
+                "rtx5090_1x": {
+                    "instance_id": 99,
+                    "destroyed": True,
+                    "actual_status": "destroyed",
+                },
+            },
+            "launched_at": "t",
+        }
+        saved: list[dict] = []
+
+        def _save(s: dict) -> None:
+            saved.append(dict(s))
+
+        with (
+            patch("lib.destroy.load_instances", return_value=state),
+            patch("lib.destroy.save_instances", side_effect=_save),
+            patch("lib.instance_lifecycle.destroy_bakeoff_api_instances", return_value=0),
+            patch("lib.destroy.account_credit", return_value=1.0),
+        ):
+            destroy_all_leftovers()
+        self.assertEqual(saved[-1]["instances"], {})
+
+    def test_check_stale_instances_ignores_destroyed_json(self) -> None:
+        import json
+        from unittest.mock import patch
+
+        import preflight_smoke
+
+        with tempfile.TemporaryDirectory() as tmp:
+            inst_path = Path(tmp) / "instances.json"
+            matrix_path = Path(tmp) / "matrix.yaml"
+            inst_path.write_text(
+                json.dumps(
+                    {
+                        "instances": {
+                            "rtx5090_1x": {
+                                "instance_id": 99,
+                                "destroyed": True,
+                                "actual_status": "destroyed",
+                            },
+                        },
+                    }
+                )
+            )
+            matrix_path.write_text("skus: {}")
+            with (
+                patch.object(preflight_smoke, "INSTANCES_PATH", inst_path),
+                patch.object(preflight_smoke, "MATRIX_PATH", matrix_path),
+                patch(
+                    "lib.instance_lifecycle.list_account_instances",
+                    return_value=[],
+                ),
+            ):
+                ok, msg = preflight_smoke.check_stale_instances()
+            self.assertTrue(ok)
+            self.assertIn("No stale", msg)
+
+
 if __name__ == "__main__":
     unittest.main()
