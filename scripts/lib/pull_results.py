@@ -11,7 +11,7 @@ from pathlib import Path
 
 from lib.hf_results import pull_sku_from_hf, sku_matrix_path, verify_sku_matrix
 from lib.ssh_preflight import attach_instance_ssh
-from lib.ssh_remote import ssh_run, wait_for_ssh
+from lib.ssh_remote import ssh_probe, wait_for_ssh
 from lib.transport import use_onstart_transport
 from lib.vast import ROOT, vastai_copy
 
@@ -115,11 +115,14 @@ def dump_ssh_diagnostics(instance_id: int) -> None:
     ]
     for label, cmd in probes:
         try:
-            out = ssh_run(instance_id, cmd, check=False, timeout=45)
+            ok, out, err = ssh_probe(instance_id, cmd, timeout=45)
+            if not ok:
+                print(f"  diag {label}: SSH failed: {err}")
+                continue
             snippet = out.strip().replace("\n", " | ")
             if len(snippet) > 400:
                 snippet = snippet[:397] + "..."
-            print(f"  diag {label}: {snippet or '(empty)'}")
+            print(f"  diag {label}: {snippet or '(empty output)'}")
         except Exception as exc:
             print(f"  diag {label}: {exc}")
 

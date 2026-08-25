@@ -24,9 +24,10 @@ from lib.pull_results import (
 from lib.push_and_run import push_and_run
 from lib.sku_blocks import count_runnable_skus, iter_runnable_skus
 from lib.ssh_preflight import ensure_ssh_ready
+from lib.ssh_remote import SshNotReadyError
 from lib.transport import get_transport, use_onstart_transport
 from lib.vast import ROOT, account_credit, read_yaml, save_instances
-from lib.wait_running import wait_until_running
+from lib.wait_running import retry_ssh_backups, wait_until_running
 
 OFFERS_PATH = ROOT / "config" / "offers.yaml"
 MATRIX_PATH = ROOT / "config" / "matrix.yaml"
@@ -129,6 +130,31 @@ def run_one_sku(
         pull_sku(iid, sku_id)
         pulled_ok = True
         return True, running
+    except SshNotReadyError as exc:
+        dump_ssh_diagnostics(exc.instance_id)
+        pull_run_log_best_effort(exc.instance_id, sku_id)
+        if exc.auth_denied and not use_onstart_transport():
+            print(
+                f"  {sku_id}: SSH auth failed on instance {exc.instance_id} "
+                "— destroy and try backup offer"
+            )
+            destroy_instance(running, sku_id)
+            replacement = retry_ssh_backups(sku_id, running, offers, sku_meta)
+            if replacement:
+                print(f"  {sku_id} recovered on backup offer {replacement.get('offer_id')}")
+                return run_one_sku(
+                    sku_id,
+                    replacement,
+                    offers,
+                    sku_meta,
+                    mode="push_and_run",
+                )
+            print(f"  {sku_id}: SSH auth failed — no backup offer with working SSH")
+            running["error"] = str(exc)
+            return False, running
+        print(f"  {sku_id}: failed — instance {exc.instance_id} kept for retry: {exc}")
+        running["error"] = str(exc)
+        return False, running
     except Exception as exc:
         dump_ssh_diagnostics(iid)
         pull_run_log_best_effort(iid, sku_id)

@@ -210,6 +210,53 @@ def retry_backups(
     return None
 
 
+def retry_ssh_backups(
+    sku_id: str,
+    rec: dict[str, Any],
+    offers: dict[str, Any],
+    sku_meta: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Destroy path already ran; launch backup offers until SSH auth succeeds."""
+    from lib.ssh_preflight import attach_instance_ssh
+    from lib.ssh_remote import SshNotReadyError, wait_for_ssh
+
+    backups = list(rec.get("backup_offer_ids") or [])
+    last_fail_iid = rec.get("instance_id")
+    for offer_id in backups:
+        offer = candidate_by_id(offers, sku_id, offer_id)
+        if not offer:
+            print(f"  backup offer {offer_id} not found in offers.yaml")
+            continue
+        err = validate_offer(sku_id, offer, sku_meta)
+        if err:
+            print(f"  skip backup {offer_id}: {err}")
+            continue
+        print(f"  Retrying {sku_id} with backup offer {offer_id} (SSH auth failed)")
+        new_rec = launch_one(sku_id, offer, sku_meta)
+        if not new_rec:
+            continue
+        result = wait_instance(int(new_rec["instance_id"]))
+        new_rec["actual_status"] = result
+        last_fail_iid = new_rec["instance_id"]
+        if result != "running":
+            print(f"  Backup instance {new_rec['instance_id']} failed ({result}) — destroying")
+            destroy_instance(new_rec, sku_id)
+            continue
+        iid = int(new_rec["instance_id"])
+        try:
+            attach_instance_ssh(iid)
+            wait_for_ssh(iid)
+        except SshNotReadyError:
+            print(f"  Backup instance {iid} SSH auth failed — destroying")
+            destroy_instance(new_rec, sku_id)
+            continue
+        new_rec["backup_offer_ids"] = [oid for oid in backups if oid != offer_id]
+        return new_rec
+    rec["instance_id"] = last_fail_iid
+    rec["error"] = "ssh auth failed (all candidates)"
+    return None
+
+
 def wait_until_running(
     sku_id: str,
     rec: dict[str, Any],

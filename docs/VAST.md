@@ -76,9 +76,12 @@ Poll `vastai show instance <id> --raw`:
 
 ```bash
 uv run python scripts/01_search_offers.py    # writes config/offers.yaml
+uv run python scripts/ssh_smoke_test.py --sku dgx_spark_gb10 --candidate-index 1
 uv run python scripts/02_run_bakeoff.py      # serial per-SKU: launch → matrix → pull → destroy
 uv run python scripts/02_run_bakeoff.py --destroy-only   # emergency cleanup
 ```
+
+**SSH smoke test** (`ssh_smoke_test.py`): launches one offer with 40GB disk, attaches your pubkey, retries SSH like the bakeoff, runs `echo ok`, then destroys. Use before a full run to avoid paying for an 8h matrix on a bad host (`--offer ID` or `--sku` + `--candidate-index`).
 
 Launch flags used:
 
@@ -188,7 +191,10 @@ If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 | Repeated `loading` during wait | Normal image pull / container start — watch `status_msg` and elapsed time in wait log; timeout is `WAIT_TIMEOUT_SEC` (25 min) then backup offer |
 | Repeated `waiting` then abort `no_progress` (SSH) | Harness never wrote `PROGRESS.json` — check `results/{sku}/run.log` locally; re-run reuses instance if pid/progress exists. Common causes: SSH auth lag (orchestrator retries ~80s), or old `setsid nohup … &` start killing the job. Fix: `start_matrix.sh` runs in foreground and verifies pid. |
 | Repeated `waiting` then abort `no_progress` (onstart) | Clone/bootstrap failed — check `vastai logs`, confirm `BAKEOFF_GIT_URL` is public and `BAKEOFF_GIT_REF` exists |
-| `Permission denied (publickey)` right after `running` | Normal for a few seconds after `attach ssh` — orchestrator retries with `IdentitiesOnly=yes`. Manual: wait 30–60s, or `vastai attach ssh <id> "$(cat ~/.ssh/id_ed25519.pub)"` |
+| `Permission denied (publickey)` right after `running` | Normal for a few seconds after `attach ssh` — orchestrator logs each SSH attempt and `ssh-url` host:port on first/last retry. Manual: wait 30–60s, or `vastai attach ssh <id> "$(cat ~/.ssh/id_ed25519.pub)"` |
+| `Permission denied` for full retry window (~80s) | Host never accepted your key — not image lag. Orchestrator destroys that instance and tries the next offer in `offers.yaml`. `diag ls/ps` showing `SSH failed: …` means auth failed (not an empty VM). |
+| `ssh auth failed (all candidates)` | Every Spark (or SKU) offer failed SSH — destroy stuck instances (`--destroy-only`) or pick new offers via `01_search_offers.py` |
+| Pre-flight SSH on one offer | `uv run python scripts/ssh_smoke_test.py --sku dgx_spark_gb10 --candidate-index 1` (40GB disk, destroy on exit) |
 | Same `install pip_*` line with `(unchanged Nm)` | Normal during long pip — read the `hint:` line or `vastai logs --tail 80` |
 | Stuck on `install install_stack` (old harness) | Push latest `main` — expect sub-steps `pip_comfyui`, `pip_vllm`, etc. |
 | `install skip_vllm_arm64` on Spark | Expected — vLLM has no reliable aarch64 wheel; Qwen LLM jobs stub |

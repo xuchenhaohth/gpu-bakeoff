@@ -18,7 +18,7 @@ from lib.matrix_poll import (
     status_is_blank,
 )
 from lib.pull_results import sku_has_results
-from lib.ssh_remote import is_ssh_retryable, parse_ssh_url
+from lib.ssh_remote import is_ssh_auth_denied, is_ssh_retryable, parse_ssh_url, SshNotReadyError
 from lib.vast import vast_cli_error
 
 
@@ -64,6 +64,15 @@ class SshRetryTests(unittest.TestCase):
 
     def test_non_retryable(self) -> None:
         self.assertFalse(is_ssh_retryable("bash: onstart.sh: No such file or directory"))
+
+    def test_auth_denied_detection(self) -> None:
+        self.assertTrue(is_ssh_auth_denied("root@host: Permission denied (publickey)."))
+        self.assertFalse(is_ssh_auth_denied("Connection refused"))
+
+    def test_ssh_not_ready_error(self) -> None:
+        err = SshNotReadyError(12345, "ssh failed", auth_denied=True)
+        self.assertEqual(err.instance_id, 12345)
+        self.assertTrue(err.auth_denied)
 
 
 class StartMatrixScriptTests(unittest.TestCase):

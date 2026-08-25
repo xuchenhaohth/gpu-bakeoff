@@ -112,8 +112,18 @@ def attach_instance_ssh(instance_id: int) -> None:
     pub_text = pub.read_text().strip()
     print(f"Attach SSH key {pub} -> instance {instance_id}")
     result = vastai("attach", "ssh", str(instance_id), pub_text, check=False)
-    if isinstance(result, dict) and result.get("success") is False:
-        msg = result.get("msg") or result.get("message") or str(result)
-        lowered = str(msg).lower()
-        if "already" not in lowered:
-            raise RuntimeError(f"attach ssh {instance_id} failed: {msg}")
+    if isinstance(result, dict):
+        success = result.get("success")
+        msg = result.get("msg") or result.get("message")
+        if success is True:
+            detail = _redact(str(msg or "ok"), pub_text)
+            print(f"  attach ssh {instance_id}: {detail}")
+        elif success is False:
+            detail = _redact(str(msg or str(result)), pub_text)
+            lowered = detail.lower()
+            if "already" in lowered:
+                print(f"  attach ssh {instance_id}: {detail}")
+            else:
+                raise RuntimeError(f"attach ssh {instance_id} failed: {detail}")
+        elif msg:
+            print(f"  attach ssh {instance_id}: {_redact(str(msg), pub_text)}")
