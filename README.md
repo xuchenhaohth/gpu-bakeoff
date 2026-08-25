@@ -11,7 +11,7 @@ Serial **Vast.ai** evidence run for a boss-facing hardware × model fit matrix. 
 3. Hugging Face token with **gated licenses accepted** for Ideogram 4, MiniMax H3, FLUX.2-dev.
 4. [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
 5. `vastai` CLI installed (see below).
-6. SSH key at `~/.ssh/id_ed25519.pub`, registered on a **personal** Vast account (`vastai create ssh-key`). Team API keys cannot store SSH keys, and this pipeline will abort rather than bill an idle GPU. Vast has no VM password.
+6. **Personal** Vast account: SSH key at `~/.ssh/id_ed25519.pub` (`vastai create ssh-key`). **Team** API keys use onstart transport instead (public git clone at boot + Hugging Face for results) — no SSH required.
 
 ## One-time setup
 

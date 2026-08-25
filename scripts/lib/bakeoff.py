@@ -17,6 +17,7 @@ from lib.matrix_poll import wait_for_matrix
 from lib.pull_results import merge_results, pull_sku
 from lib.push_and_run import push_and_run
 from lib.ssh_preflight import ensure_ssh_ready
+from lib.transport import use_onstart_transport
 from lib.vast import ROOT, read_yaml, save_instances, vastai
 from lib.wait_running import wait_until_running
 
@@ -88,8 +89,10 @@ def run_one_sku(
 
     iid = int(running["instance_id"])
     try:
-        if mode in ("fresh", "wait", "push_and_run"):
+        if mode in ("fresh", "wait", "push_and_run") and not use_onstart_transport():
             push_and_run(iid, sku_id)
+        elif mode == "push_and_run" and use_onstart_transport():
+            print("  onstart transport: harness starts at boot (no SSH push)")
         running["matrix_status"] = wait_for_matrix(iid)
         pull_sku(iid, sku_id)
         return True, running

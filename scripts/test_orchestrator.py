@@ -5,7 +5,11 @@ from __future__ import annotations
 
 import unittest
 
-from lib.matrix_poll import format_progress_line, status_is_blank
+from lib.matrix_poll import (
+    format_progress_line,
+    parse_logs_status,
+    status_is_blank,
+)
 from lib.ssh_remote import parse_ssh_url
 from lib.vast import vast_cli_error
 
@@ -57,6 +61,18 @@ class ProgressLineTests(unittest.TestCase):
         line = format_progress_line(1, raw, 12, 100)
         self.assertIn("onstart", line)
         self.assertIn("bootstrap", line)
+
+    def test_parse_logs_progress(self) -> None:
+        logs = (
+            "== bakeoff bootstrap ==\n"
+            "[progress] onstart bootstrap\n"
+            "[progress] matrix 2/14 flux2_dev/img01 timed\n"
+            "BAKEOFF_DONE exit=0\n"
+        )
+        self.assertEqual(parse_logs_status(logs), "DONE:0")
+        partial = parse_logs_status("[progress] prefetch 1/6 ideogram_4\n")
+        self.assertTrue(partial.startswith("log="))
+        self.assertIn("prefetch", partial)
 
 
 if __name__ == "__main__":

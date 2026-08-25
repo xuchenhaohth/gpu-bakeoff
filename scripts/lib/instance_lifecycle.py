@@ -10,6 +10,7 @@ from typing import Any, Literal
 from lib.destroy import destroy_instance
 from lib.launch_instance import backup_offer_ids, launch_first_valid
 from lib.matrix_poll import harness_present, matrix_done
+from lib.transport import use_onstart_transport
 from lib.vast import load_instances, normalize_vast_list, vastai
 from lib.wait_running import FAIL_STATUSES, parse_instance_status
 
@@ -109,6 +110,18 @@ def reconcile_bakeoff_instances(matrix_skus: dict[str, Any]) -> dict[str, Any]:
         if action == "destroy":
             print(f"  Destroy stale {label} instance {keeper_id} ({status})")
             destroy_instance(rec, sku_id)
+        elif use_onstart_transport() and action == "running" and keeper_id is not None:
+            keeper_iid = int(keeper_id)
+            if matrix_done(keeper_iid):
+                print(f"  Keep {label} instance {keeper_id} (matrix done, pull pending)")
+            elif harness_present(keeper_iid):
+                print(f"  Keep {label} instance {keeper_id} (onstart harness running)")
+            else:
+                print(
+                    f"  Destroy idle {label} instance {keeper_id} "
+                    "(no onstart harness — relaunch with --onstart)"
+                )
+                destroy_instance(rec, sku_id)
         else:
             print(f"  Keep {label} instance {keeper_id} ({status or 'provisioning'})")
 
@@ -150,6 +163,15 @@ def resolve_sku_instance(
             elif matrix_done(iid):
                 print(f"  Reusing instance {iid} for {sku_id} — matrix done, pull only")
                 return rec, [], "pull_only"
+            elif use_onstart_transport():
+                if harness_present(iid):
+                    print(f"  Reusing instance {iid} for {sku_id} — resume matrix (onstart)")
+                    return rec, backups, "resume_matrix"
+                print(
+                    f"  Destroy idle instance {iid} for {sku_id} "
+                    "(no onstart harness in logs)"
+                )
+                destroy_instance(rec, sku_id)
             elif harness_present(iid):
                 print(f"  Reusing instance {iid} for {sku_id} — resume matrix")
                 return rec, backups, "resume_matrix"

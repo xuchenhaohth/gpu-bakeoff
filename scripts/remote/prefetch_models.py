@@ -12,6 +12,7 @@ REPO_ROOT = REMOTE_ROOT.parents[1]
 sys.path.insert(0, str(REMOTE_ROOT))
 
 import yaml  # noqa: E402
+from progress import write_progress  # noqa: E402
 
 
 def config_path() -> Path:
@@ -20,6 +21,16 @@ def config_path() -> Path:
         if p.exists():
             return p
     return REPO_ROOT / "config" / "models.yaml"
+
+
+def prefetch_targets(models: dict) -> list[tuple[str, dict]]:
+    """Models that will be downloaded (one entry per progress tick)."""
+    targets: list[tuple[str, dict]] = []
+    for key, spec in models.items():
+        if not spec.get("hf_id"):
+            continue
+        targets.append((key, spec))
+    return targets
 
 
 def main() -> int:
@@ -32,14 +43,24 @@ def main() -> int:
     token = os.environ.get("HF_TOKEN")
     models = yaml.safe_load(config_path().read_text()).get("models", {})
     cache_dir = os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface"))
+    targets = prefetch_targets(models)
+    total = len(targets)
 
-    for key, spec in models.items():
+    for index, (key, spec) in enumerate(targets, start=1):
         hf_id = spec.get("hf_id")
         if not hf_id:
             continue
         runtime = spec.get("runtime", "")
         layer = spec.get("layer_a", {})
         file_hint = layer.get("file_hint")
+
+        write_progress(
+            "prefetch",
+            model=key,
+            prefetch_index=index,
+            prefetch_total=total,
+            message=f"Prefetch {key}",
+        )
 
         if runtime == "llama_cpp" and file_hint:
             print(f"Prefetch GGUF {key}: {hf_id}/{file_hint}")

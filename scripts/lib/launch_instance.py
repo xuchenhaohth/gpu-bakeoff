@@ -4,13 +4,16 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from lib.sku_offers import validate_offer
+from lib.transport import default_git_ref, default_git_url, use_onstart_transport
 from lib.vast import vastai
 
 DISK_GB = int(os.environ.get("DISK_GB", "400"))
 DEFAULT_IMAGE = "vastai/pytorch:@vastai-automatic-tag"
+BOOTSTRAP_SCRIPT = Path(__file__).resolve().parent / "onstart_bootstrap.sh"
 
 
 def backup_offer_ids(candidates: list[dict[str, Any]], offer_id: Any | None) -> list[Any]:
@@ -45,13 +48,19 @@ def launch_one(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> 
     hf = os.environ.get("HF_TOKEN", "")
     tz = os.environ.get("TZ", "Australia/Melbourne")
     num_gpus = sku_meta.get("num_gpus", 1)
+    git_url = default_git_url()
+    git_ref = default_git_ref()
+    hf_results = os.environ.get("HF_RESULTS_REPO", "").strip()
+
     env_str = (
         f"-e HF_TOKEN={hf} -e TZ={tz} -e BAKEOFF_SKU={sku_id} "
-        f"-e BAKEOFF_GPU_COUNT={num_gpus}"
+        f"-e BAKEOFF_GPU_COUNT={num_gpus} "
+        f"-e BAKEOFF_GIT_URL={git_url} -e BAKEOFF_GIT_REF={git_ref}"
     )
+    if hf_results:
+        env_str += f" -e HF_RESULTS_REPO={hf_results}"
 
-    print(f"Launching {sku_id} offer={offer_id} label={label} image={image}")
-    result = vastai(
+    args: list[str] = [
         "create",
         "instance",
         str(offer_id),
@@ -65,8 +74,17 @@ def launch_one(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> 
         label,
         "--env",
         env_str,
-        check=False,
-    )
+    ]
+    if use_onstart_transport():
+        if not BOOTSTRAP_SCRIPT.is_file():
+            print(f"  REFUSE launch: missing bootstrap {BOOTSTRAP_SCRIPT}")
+            return None
+        args.extend(["--onstart", str(BOOTSTRAP_SCRIPT)])
+        print(f"Launching {sku_id} offer={offer_id} label={label} image={image} (onstart bootstrap)")
+    else:
+        print(f"Launching {sku_id} offer={offer_id} label={label} image={image}")
+
+    result = vastai(*args, check=False)
     if isinstance(result, dict) and result.get("success"):
         iid = result.get("new_contract") or result.get("id")
         print(f"  -> instance id {iid}")
@@ -80,6 +98,7 @@ def launch_one(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> 
             "gpu_name": offer.get("gpu_name"),
             "reliability": offer.get("reliability"),
             "status": "created",
+            "transport": "onstart" if use_onstart_transport() else "ssh",
         }
     if isinstance(result, dict):
         msg = result.get("msg") or result.get("message")

@@ -177,6 +177,20 @@ def vastai_execute(instance_id: int, cmd: str, check: bool = True) -> None:
     vastai_execute_output(instance_id, cmd, check=check)
 
 
+def vastai_logs(instance_id: int, *, tail: int = 500) -> str:
+    """Fetch container logs (used for onstart transport progress polling)."""
+    proc = subprocess.run(
+        _vastai_cmd("logs", str(instance_id), "--tail", str(tail), raw=False),
+        capture_output=True,
+        text=True,
+    )
+    err = vast_cli_error(proc.stdout, proc.stderr)
+    if proc.returncode != 0 or err:
+        return ""
+    parts = [proc.stdout or "", proc.stderr or ""]
+    return "\n".join(p for p in parts if p.strip()).strip()
+
+
 def vastai_execute_output(instance_id: int, cmd: str, check: bool = False) -> str:
     """Run `vastai execute` and return stdout.
 

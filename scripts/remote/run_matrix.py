@@ -12,10 +12,12 @@ import os
 import subprocess
 import sys
 from datetime import datetime, timezone
+from typing import Any, TextIO
 
 from comfy_client import run_image_job, run_video_job
 from llm_client import llm_extra_args, run_llm_job
 from paths import REMOTE_ROOT, RESULTS_DIR, load_config, resolve_asset
+from progress import JOB_TOTAL, format_last_result, write_progress
 from sampler import timed_run
 
 SKU = os.environ.get("BAKEOFF_SKU", "unknown")
@@ -54,6 +56,31 @@ FIELDNAMES = [
     "error",
     "note",
 ]
+
+
+class JobTracker:
+    """Tracks Layer A job index (1..JOB_TOTAL) for progress heartbeats."""
+
+    def __init__(self) -> None:
+        self.index = 0
+
+    def start(self, model: str, prompt_id: str, stage: str) -> None:
+        self.index += 1
+        self._update(model, prompt_id, stage)
+
+    def stage(self, model: str, prompt_id: str, stage: str) -> None:
+        """Update stage within the current job without incrementing index."""
+        self._update(model, prompt_id, stage)
+
+    def _update(self, model: str, prompt_id: str, stage: str) -> None:
+        write_progress(
+            "matrix",
+            job_index=self.index,
+            job_total=JOB_TOTAL,
+            model=model,
+            prompt_id=prompt_id,
+            stage=stage,
+        )
 
 
 def sku_meta(matrix: dict) -> dict:
@@ -124,6 +151,25 @@ def apply_peak(row: dict, peak: dict) -> None:
             row[f"peak_{k}"] = v
 
 
+def write_row(
+    writer: csv.DictWriter,
+    csv_file: TextIO,
+    tracker: JobTracker,
+    row: dict[str, Any],
+) -> None:
+    writer.writerow(row)
+    csv_file.flush()
+    write_progress(
+        "matrix",
+        job_index=tracker.index,
+        job_total=JOB_TOTAL,
+        model=str(row.get("model", "")),
+        prompt_id=str(row.get("prompt_id", "")),
+        stage="done",
+        last_result=format_last_result(row),
+    )
+
+
 def llm_user_text(lp: dict) -> str:
     if lp.get("user_file"):
         path = resolve_asset(lp["user_file"])
@@ -154,7 +200,15 @@ def resolve_gguf_path(spec: dict) -> str | None:
         return None
 
 
-def run_image_matrix(model_key: str, models: dict, matrix: dict, writer, protocol: dict) -> None:
+def run_image_matrix(
+    model_key: str,
+    models: dict,
+    matrix: dict,
+    writer: csv.DictWriter,
+    csv_file: TextIO,
+    tracker: JobTracker,
+    protocol: dict,
+) -> None:
     spec = models[model_key]
     precision = spec["layer_a"]["precision"]
     unified = sku_meta(matrix).get("memory_type") == "unified"
@@ -163,9 +217,13 @@ def run_image_matrix(model_key: str, models: dict, matrix: dict, writer, protoco
     for p in matrix.get("prompts", {}).get("image", []):
         warmup = protocol.get("image_warmup", 1)
         timed = protocol.get("image_timed", 2)
+        prompt_id = p["id"]
+
+        tracker.start(model_key, prompt_id, "warmup")
         for _ in range(warmup):
             run_image_job(model_key, p["text"], seed=42, checkpoint=checkpoint)
 
+        tracker.stage(model_key, prompt_id, "timed")
         times: list[float] = []
         peak_summary: dict = {}
         last_job: dict = {}
@@ -179,7 +237,7 @@ def run_image_matrix(model_key: str, models: dict, matrix: dict, writer, protoco
             times.append(elapsed)
             peak_summary = peak
 
-        r = row_base(model_key, p["id"], precision, spec.get("runtime", "comfyui"))
+        r = row_base(model_key, prompt_id, precision, spec.get("runtime", "comfyui"))
         r["wall_sec"] = round(sum(times) / len(times), 3)
         r["images_per_min"] = round(60 / r["wall_sec"], 2) if r["wall_sec"] else 0
         apply_peak(r, peak_summary)
@@ -190,10 +248,18 @@ def run_image_matrix(model_key: str, models: dict, matrix: dict, writer, protoco
             r["error"] = last_job["error"]
         if last_job.get("note"):
             r["note"] = last_job["note"]
-        writer.writerow(r)
+        write_row(writer, csv_file, tracker, r)
 
 
-def run_video_matrix(model_key: str, models: dict, matrix: dict, writer, protocol: dict) -> None:
+def run_video_matrix(
+    model_key: str,
+    models: dict,
+    matrix: dict,
+    writer: csv.DictWriter,
+    csv_file: TextIO,
+    tracker: JobTracker,
+    protocol: dict,
+) -> None:
     spec = models[model_key]
     precision = spec["layer_a"]["precision"]
     unified = sku_meta(matrix).get("memory_type") == "unified"
@@ -206,10 +272,13 @@ def run_video_matrix(model_key: str, models: dict, matrix: dict, writer, protoco
     warmup = protocol.get("video_warmup", 1)
     timed = protocol.get("video_timed", 1)
     duration = vp.get("duration_sec", 5)
+    prompt_id = vp.get("id", "vid01")
 
+    tracker.start(model_key, prompt_id, "warmup")
     for _ in range(warmup):
         run_video_job(model_key, vp.get("text", ""), duration_sec=duration, checkpoint=checkpoint)
 
+    tracker.stage(model_key, prompt_id, "timed")
     times: list[float] = []
     peak_summary: dict = {}
     last_job: dict = {}
@@ -229,7 +298,7 @@ def run_video_matrix(model_key: str, models: dict, matrix: dict, writer, protoco
         times.append(elapsed)
         peak_summary = peak
 
-    r = row_base(model_key, vp.get("id", "vid01"), precision, spec.get("runtime", "comfyui"))
+    r = row_base(model_key, prompt_id, precision, spec.get("runtime", "comfyui"))
     r["wall_sec"] = round(sum(times) / len(times), 3) if times else 0
     apply_peak(r, peak_summary)
     status = last_job.get("status", "quantized")
@@ -238,10 +307,18 @@ def run_video_matrix(model_key: str, models: dict, matrix: dict, writer, protoco
     if last_job.get("error"):
         r["pass"] = False
         r["error"] = last_job["error"]
-    writer.writerow(r)
+    write_row(writer, csv_file, tracker, r)
 
 
-def run_llm_matrix(model_key: str, models: dict, matrix: dict, writer, protocol: dict) -> None:
+def run_llm_matrix(
+    model_key: str,
+    models: dict,
+    matrix: dict,
+    writer: csv.DictWriter,
+    csv_file: TextIO,
+    tracker: JobTracker,
+    protocol: dict,
+) -> None:
     spec = models[model_key]
     skip, reason = should_skip_model(model_key, models)
     if skip:
@@ -249,11 +326,13 @@ def run_llm_matrix(model_key: str, models: dict, matrix: dict, writer, protocol:
             lp = matrix.get("prompts", {}).get("llm", {}).get(key, {})
             if not lp:
                 continue
-            r = row_base(model_key, lp.get("id", key), "n/a", spec.get("runtime", ""))
+            prompt_id = lp.get("id", key)
+            tracker.start(model_key, prompt_id, "skip")
+            r = row_base(model_key, prompt_id, "n/a", spec.get("runtime", ""))
             r["pass"] = False
             r["fit_status"] = "No"
             r["error"] = reason
-            writer.writerow(r)
+            write_row(writer, csv_file, tracker, r)
         return
 
     precision = spec["layer_a"]["precision"]
@@ -269,6 +348,8 @@ def run_llm_matrix(model_key: str, models: dict, matrix: dict, writer, protocol:
         lp = llm_prompts.get(key)
         if not lp:
             continue
+        prompt_id = lp.get("id", key)
+        tracker.start(model_key, prompt_id, "run")
         system = lp.get("system", "")
         user = llm_user_text(lp)
         max_tok = lp.get("output_tokens", 128)
@@ -289,7 +370,7 @@ def run_llm_matrix(model_key: str, models: dict, matrix: dict, writer, protocol:
             )
 
         elapsed, peak = timed_run(job, interval=protocol.get("sampler_interval_sec", 1.5), unified=unified)
-        r = row_base(model_key, lp.get("id", key), precision, runtime)
+        r = row_base(model_key, prompt_id, precision, runtime)
         r["wall_sec"] = round(elapsed, 3)
         r.update({k: v for k, v in metrics.items() if k not in ("pass",)})
         apply_peak(r, peak)
@@ -302,19 +383,26 @@ def run_llm_matrix(model_key: str, models: dict, matrix: dict, writer, protocol:
             r["fit_status"] = classify_fit(status, peak, protocol, "llm", metrics)
         if metrics.get("note"):
             r["note"] = metrics["note"]
-        writer.writerow(r)
+        write_row(writer, csv_file, tracker, r)
 
 
-def run_layer(models: dict, matrix: dict, writer, protocol: dict) -> None:
+def run_layer(
+    models: dict,
+    matrix: dict,
+    writer: csv.DictWriter,
+    csv_file: TextIO,
+    tracker: JobTracker,
+    protocol: dict,
+) -> None:
     for mk in IMAGE_MODELS:
         if mk in models:
-            run_image_matrix(mk, models, matrix, writer, protocol)
+            run_image_matrix(mk, models, matrix, writer, csv_file, tracker, protocol)
     for mk in VIDEO_MODELS:
         if mk in models:
-            run_video_matrix(mk, models, matrix, writer, protocol)
+            run_video_matrix(mk, models, matrix, writer, csv_file, tracker, protocol)
     for mk in LLM_MODELS:
         if mk in models:
-            run_llm_matrix(mk, models, matrix, writer, protocol)
+            run_llm_matrix(mk, models, matrix, writer, csv_file, tracker, protocol)
 
 
 def main() -> int:
@@ -323,17 +411,23 @@ def main() -> int:
     models = models_cfg.get("models", {})
     protocol = matrix.get("protocol", {})
 
+    write_progress("matrix", message="starting", job_total=JOB_TOTAL)
+
     out_csv = RESULTS_DIR / "matrix.csv"
+    tracker = JobTracker()
     with open(out_csv, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES, extrasaction="ignore")
         writer.writeheader()
-        run_layer(models, matrix, writer, protocol)
+        f.flush()
+        run_layer(models, matrix, writer, f, tracker, protocol)
 
     print(f"Wrote {out_csv}")
+    write_progress("report", message="generating report")
     subprocess.run(
         [sys.executable, str(REMOTE_ROOT / "report.py"), "--csv", str(out_csv)],
         check=False,
     )
+    write_progress("done", message="matrix complete")
     return 0
 
 

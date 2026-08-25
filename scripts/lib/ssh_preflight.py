@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""Account SSH key checks. Team API keys cannot store keys — bake-off requires SSH."""
+"""Account SSH key checks; team API keys use onstart transport instead."""
 
 from __future__ import annotations
 
 import subprocess
 from typing import Any
 
+from lib.transport import TRANSPORT_ONSTART, TRANSPORT_SSH, set_transport
 from lib.vast import _vastai_cmd, local_ssh_identity, local_ssh_pubkey, vastai
 
 SSH_KEYS_URL = "https://cloud.vast.ai/manage-keys/"
-SSH_REQUIRED = (
-    "This bake-off requires SSH. Vast has no VM password, and "
-    "`vastai execute` cannot run commands on a running instance "
-    "(ls/rm/du on stopped VMs only).\n"
-    "Use a personal API key (not a team key) and register the local pubkey:\n"
-    f"  {SSH_KEYS_URL}\n"
-    '  vastai create ssh-key "$(cat ~/.ssh/id_ed25519.pub)"'
+ONSTART_NOTE = (
+    "Team API key detected — using onstart transport:\n"
+    "  • Harness clones from public git at VM boot (--onstart)\n"
+    "  • Progress via vastai logs ([progress] lines)\n"
+    "  • Results pulled from Hugging Face (HF_TOKEN)\n"
+    "For SSH/rsync instead, use a personal API key and register:\n"
+    f"  {SSH_KEYS_URL}"
 )
 
 
@@ -73,31 +74,38 @@ def try_register_local_key() -> tuple[bool, str]:
     return False, combined or f"create ssh-key exit {proc.returncode}"
 
 
-def ensure_ssh_ready() -> None:
-    """Abort unless the local pubkey is registered on a personal Vast account."""
+def _ssh_registered() -> bool:
     pub = local_ssh_pubkey()
-    if pub is None:
-        raise SystemExit(
-            "ERROR: No local pubkey at ~/.ssh/id_ed25519.pub (or id_rsa.pub).\n" + SSH_REQUIRED
-        )
-    if local_ssh_identity() is None:
-        raise SystemExit(
-            f"ERROR: Found {pub} but no matching private key.\n" + SSH_REQUIRED
-        )
+    if pub is None or local_ssh_identity() is None:
+        return False
     local_blob = pubkey_blob(pub.read_text())
-    if local_blob in registered_key_blobs():
-        print(f"OK  Vast SSH key registered: {pub}")
-        return
-    ok, detail = try_register_local_key()
-    if ok or local_blob in registered_key_blobs():
-        print(f"OK  Vast SSH key registered: {pub}")
-        return
-    reason = detail.splitlines()[-1] if detail else "account has no SSH keys"
-    raise SystemExit(f"ERROR: Could not register SSH key ({reason}).\n{SSH_REQUIRED}")
+    return local_blob in registered_key_blobs()
+
+
+def ensure_ssh_ready() -> None:
+    """Select SSH transport when keys work; otherwise onstart (team API keys)."""
+    pub = local_ssh_pubkey()
+    if pub is not None and local_ssh_identity() is not None:
+        if _ssh_registered():
+            set_transport(TRANSPORT_SSH)
+            print(f"OK  Vast SSH key registered: {pub}")
+            return
+        ok, _detail = try_register_local_key()
+        if ok or _ssh_registered():
+            set_transport(TRANSPORT_SSH)
+            print(f"OK  Vast SSH key registered: {pub}")
+            return
+
+    set_transport(TRANSPORT_ONSTART)
+    print(f"WARN: {ONSTART_NOTE}")
 
 
 def attach_instance_ssh(instance_id: int) -> None:
-    """Attach the local pubkey to a running instance (needed if the key was added after create)."""
+    """Attach the local pubkey to a running instance (SSH transport only)."""
+    from lib.transport import use_onstart_transport
+
+    if use_onstart_transport():
+        return
     pub = local_ssh_pubkey()
     if pub is None:
         raise RuntimeError("No local SSH pubkey to attach")

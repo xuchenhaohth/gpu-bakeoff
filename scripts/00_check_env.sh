@@ -34,7 +34,7 @@ else
   die "uv not found — curl -LsSf https://astral.sh/uv/install.sh | sh"
 fi
 
-# SSH key — required; Vast has no VM password
+# SSH key — required for personal API keys; team keys use onstart transport
 PUB=""
 for k in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_rsa.pub"; do
   if [[ -f "$k" ]]; then
@@ -44,7 +44,7 @@ for k in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_rsa.pub"; do
   fi
 done
 if [[ -z "$PUB" ]]; then
-  die "No SSH public key — ssh-keygen -t ed25519 && vastai create ssh-key \"$(cat ~/.ssh/id_ed25519.pub)\". Team API keys cannot register keys; use a personal key."
+  warn "No SSH public key — team API keys will use onstart transport (git clone + HF results)"
 fi
 
 # API key auth
@@ -68,7 +68,7 @@ if [[ "$fail" -eq 0 ]]; then
   if PYTHONPATH="$ROOT/scripts" uv run python -c "from lib.vast import load_dotenv; from lib.ssh_preflight import ensure_ssh_ready; load_dotenv(); ensure_ssh_ready()"; then
     :
   else
-    die "SSH preflight failed"
+    die "Transport preflight failed"
   fi
 fi
 

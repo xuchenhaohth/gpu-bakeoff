@@ -4,6 +4,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 BAKEOFF_ROOT="$(pwd)"
 
+mkdir -p results
+python3 progress.py --phase onstart --message bootstrap
+
 echo "== bakeoff onstart =="
 nvidia-smi || { echo "No GPU"; exit 1; }
 
@@ -26,7 +29,10 @@ uv venv .venv
 source .venv/bin/activate
 uv pip install -q pyyaml requests huggingface_hub psutil
 
+python3 progress.py --phase onstart --message setup_venv
+
 if [[ -f "$BAKEOFF_ROOT/install_stack.sh" ]]; then
+  python3 progress.py --phase install --message install_stack
   bash "$BAKEOFF_ROOT/install_stack.sh" || echo "WARN: install_stack partial failure"
 fi
 
