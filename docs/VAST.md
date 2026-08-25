@@ -91,12 +91,19 @@ Launch flags used:
 
 Matrix completion: SSH transport reads `/workspace/bakeoff/results/DONE`; onstart transport watches logs for `BAKEOFF_DONE exit=N` after HF upload (`MATRIX_TIMEOUT_SEC`, default 8 h).
 
-Onstart progress (from `vastai logs`):
+Onstart progress (from `vastai logs` and local poller):
 
 ```text
-instance 48605233: matrix 4/14 ideogram_4/img02 timed  12m elapsed  7h47m left
-instance 48605233: prefetch 2/6 flux2_dev  4m elapsed  7h55m left
+== SKU dgx_spark_gb10 (1/5) transport=onstart instance=48614362 dph=$0.38/hr ==
+  instance 48614362:  install pip_comfyui  2m elapsed  7h57m left
+  instance 48614362:  install pip_vllm  8m elapsed  7h51m left  (unchanged 4m)
+    hint: cloning ComfyUI-HunyuanImage-3 (see: vastai logs 48614362 --tail 80)
+  instance 48614362:  install skip_vllm_arm64  9m elapsed  ...
+  instance 48614362:  prefetch 1/6 ideogram_4  11m elapsed  ...
+  instance 48614362:  matrix 1/14 ideogram_4/img01 warmup  45m elapsed  ...
 ```
+
+Install sub-steps: `pip_comfyui`, `clone_*`, `pip_vllm`, `skip_vllm_arm64` (aarch64), `pip_llama_cpp`, `install_stack_done`.
 
 Phases: `onstart` → `install` → `prefetch` → `matrix` → `report` → `upload` → `done`.
 
@@ -172,6 +179,9 @@ If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 | `Insufficient credits` | Top up billing |
 | Repeated `loading` during wait | Normal image pull / container start — watch `status_msg` and elapsed time in wait log; timeout is `WAIT_TIMEOUT_SEC` (25 min) then backup offer |
 | Repeated `waiting` then abort `no_progress` | Clone/bootstrap failed — check `vastai logs`, confirm `BAKEOFF_GIT_URL` is public and `BAKEOFF_GIT_REF` exists |
+| Same `install pip_*` line with `(unchanged Nm)` | Normal during long pip — read the `hint:` line or `vastai logs --tail 80` |
+| Stuck on `install install_stack` (old harness) | Push latest `main` — expect sub-steps `pip_comfyui`, `pip_vllm`, etc. |
+| `install skip_vllm_arm64` on Spark | Expected — vLLM has no reliable aarch64 wheel; Qwen LLM jobs stub |
 | `Team SSH keys are not supported` | Expected on team keys — onstart transport is used automatically |
 | SSH timeout / connection refused | Personal-key path only — attach key or destroy and retry |
 | CUDA / sm_120 errors | Wrong image or driver on host — next candidate |

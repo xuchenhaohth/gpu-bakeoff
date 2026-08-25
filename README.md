@@ -25,6 +25,7 @@ cp .env.example .env
 # or: curl -fsSL https://vast.ai/install.sh | bash
 
 vastai set api-key "$VAST_API_KEY"
+# Personal account only (optional for team API keys — onstart transport is used instead):
 vastai create ssh-key "$(cat ~/.ssh/id_ed25519.pub)"
 
 uv sync   # local orchestrator + dev tools
@@ -46,7 +47,7 @@ uv run python scripts/dry_run_local.py
 | Serial bake-off (one SKU at a time) | `uv run python scripts/02_run_bakeoff.py` |
 | Boss pack | `uv run python scripts/fill_boss_pack.py` then review `docs/BOSS_PACK.md` |
 
-`02_run_bakeoff.py` runs the full per-SKU lifecycle: reconcile stale instances → launch or reuse → wait → matrix → pull → destroy, then moves to the next SKU. Each SKU can run up to `MATRIX_TIMEOUT_SEC` (default 8 h).
+`02_run_bakeoff.py` runs the full per-SKU lifecycle: reconcile stale instances → launch or reuse → wait → matrix → pull → destroy, then moves to the next SKU. Each SKU can run up to `MATRIX_TIMEOUT_SEC` (default 8 h). Console output shows transport, install sub-steps (`pip_comfyui`, etc.), `(unchanged Nm)` during long pip, and matrix job index — see [docs/VAST.md](docs/VAST.md).
 
 **Full pipeline:** `./scripts/run_all.sh` — includes destroy trap on Ctrl+C.
 

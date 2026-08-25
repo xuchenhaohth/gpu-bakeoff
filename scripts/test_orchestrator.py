@@ -7,6 +7,8 @@ import unittest
 
 from lib.matrix_poll import (
     format_progress_line,
+    parse_log_hint,
+    parse_logs_detail,
     parse_logs_status,
     status_is_blank,
 )
@@ -62,6 +64,17 @@ class ProgressLineTests(unittest.TestCase):
         self.assertIn("onstart", line)
         self.assertIn("bootstrap", line)
 
+    def test_unchanged_suffix(self) -> None:
+        line = format_progress_line(
+            1,
+            "log=install pip_vllm",
+            720,
+            100,
+            unchanged_sec=360,
+        )
+        self.assertIn("unchanged", line)
+        self.assertIn("6m", line)
+
     def test_parse_logs_progress(self) -> None:
         logs = (
             "== bakeoff bootstrap ==\n"
@@ -73,6 +86,20 @@ class ProgressLineTests(unittest.TestCase):
         partial = parse_logs_status("[progress] prefetch 1/6 ideogram_4\n")
         self.assertTrue(partial.startswith("log="))
         self.assertIn("prefetch", partial)
+
+    def test_parse_logs_detail_hint(self) -> None:
+        logs = (
+            "[progress] install pip_vllm\n"
+            "  cloning ComfyUI-HunyuanImage-3\n"
+            "  WARN: failed to clone ComfyUI-HunyuanImage-3\n"
+        )
+        status, hint = parse_logs_detail(logs)
+        self.assertEqual(status, "log=install pip_vllm")
+        self.assertIn("WARN", hint)
+
+    def test_parse_log_hint(self) -> None:
+        logs = "Cloning into '/workspace/ComfyUI'...\n"
+        self.assertIn("Cloning", parse_log_hint(logs))
 
 
 if __name__ == "__main__":

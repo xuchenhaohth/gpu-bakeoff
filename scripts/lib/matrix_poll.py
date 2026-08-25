@@ -7,6 +7,8 @@ import json
 import os
 import re
 import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from lib.transport import use_onstart_transport
@@ -16,7 +18,11 @@ from lib.wait_running import FAIL_STATUSES, _format_duration, _truncate_msg, ins
 MATRIX_TIMEOUT_SEC = int(os.environ.get("MATRIX_TIMEOUT_SEC", "28800"))
 STARTUP_GRACE_SEC = int(os.environ.get("MATRIX_STARTUP_GRACE_SEC", "180"))
 SSH_FAIL_LIMIT = int(os.environ.get("MATRIX_SSH_FAIL_LIMIT", "3"))
+HEARTBEAT_STALE_SEC = int(os.environ.get("MATRIX_HEARTBEAT_STALE_SEC", "120"))
 POLL = 30
+KEEPALIVE_SEC = 300
+UNCHANGED_WARN_SEC = 60
+LOG_TAIL = 500
 DONE_PATH = "/workspace/bakeoff/results/DONE"
 PROGRESS_PATH = "/workspace/bakeoff/results/PROGRESS.json"
 RUN_LOG_PATH = "/workspace/bakeoff/run.log"
@@ -34,6 +40,22 @@ _STATUS_CMD = (
     f"else tail -n 30 {RUN_LOG_PATH} 2>/dev/null | sed '/^$/d' | tail -n 1; fi"
 )
 
+_HINT_SKIP_PREFIXES = (
+    "Hit:",
+    "Reading package",
+    "Building dependency",
+    "0 upgraded",
+    "Server listening",
+    "Warning: Permanently added",
+)
+
+
+@dataclass
+class PollSnapshot:
+    raw: str
+    hint: str = ""
+    heartbeat_age_sec: float | None = None
+
 
 def remote_file_exists(instance_id: int, path: str) -> bool:
     from lib.ssh_remote import ssh_run
@@ -44,26 +66,48 @@ def remote_file_exists(instance_id: int, path: str) -> bool:
 
 def matrix_done(instance_id: int) -> bool:
     if use_onstart_transport():
-        return matrix_done_from_logs(instance_id)
+        return fetch_poll_snapshot(instance_id).raw.startswith("DONE:")
     return remote_file_exists(instance_id, DONE_PATH)
 
 
 def harness_present(instance_id: int) -> bool:
     if use_onstart_transport():
-        return harness_present_from_logs(instance_id)
+        text = vastai_logs(instance_id, tail=300)
+        if PROGRESS_MARKER in text:
+            return True
+        return any(marker in text for marker in _BOOTSTRAP_MARKERS)
     return remote_file_exists(instance_id, HARNESS_PATH)
 
 
-def fetch_matrix_status(instance_id: int) -> str:
-    if use_onstart_transport():
-        return fetch_matrix_status_from_logs(instance_id)
-    from lib.ssh_remote import ssh_run
-
-    return ssh_run(instance_id, _STATUS_CMD, check=True, timeout=45)
+def parse_log_hint(log_text: str) -> str:
+    """Last meaningful non-progress line from container logs."""
+    for line in reversed(log_text.splitlines()):
+        text = line.strip()
+        if not text or PROGRESS_MARKER in text:
+            continue
+        if text.startswith(_HINT_SKIP_PREFIXES):
+            continue
+        if (
+            text.startswith("==")
+            or text.startswith("WARN:")
+            or text.startswith("Cloning")
+            or "clone" in text.lower()
+            or "pip install" in text.lower()
+            or text.startswith("Downloading")
+            or text.startswith("Installing")
+            or text.startswith("Stack install")
+        ):
+            return _truncate_msg(text)
+    return ""
 
 
 def parse_logs_status(log_text: str) -> str:
     """Return DONE:code, a progress log line, or empty."""
+    return parse_logs_detail(log_text)[0]
+
+
+def parse_logs_detail(log_text: str) -> tuple[str, str]:
+    """Return (status_raw, hint) from container logs."""
     last_progress = ""
     done_code: str | None = None
     for line in log_text.splitlines():
@@ -73,25 +117,42 @@ def parse_logs_status(log_text: str) -> str:
         if PROGRESS_MARKER in line:
             last_progress = line.split(PROGRESS_MARKER, 1)[1].strip()
     if done_code is not None:
-        return f"DONE:{done_code}"
+        return f"DONE:{done_code}", ""
     if last_progress:
-        return f"log={last_progress}"
-    return ""
+        return f"log={last_progress}", parse_log_hint(log_text)
+    return "", parse_log_hint(log_text)
 
 
-def fetch_matrix_status_from_logs(instance_id: int, *, tail: int = 500) -> str:
-    return parse_logs_status(vastai_logs(instance_id, tail=tail))
+def progress_json_age_sec(data: dict[str, Any]) -> float | None:
+    updated = data.get("updated_at")
+    if not updated:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - ts).total_seconds())
+    except ValueError:
+        return None
 
 
-def matrix_done_from_logs(instance_id: int) -> bool:
-    return fetch_matrix_status_from_logs(instance_id).startswith("DONE:")
+def fetch_poll_snapshot(instance_id: int, *, tail: int = LOG_TAIL) -> PollSnapshot:
+    if use_onstart_transport():
+        log_text = vastai_logs(instance_id, tail=tail)
+        raw, hint = parse_logs_detail(log_text)
+        return PollSnapshot(raw=raw, hint=hint)
 
+    from lib.ssh_remote import ssh_run
 
-def harness_present_from_logs(instance_id: int) -> bool:
-    text = vastai_logs(instance_id, tail=300)
-    if PROGRESS_MARKER in text:
-        return True
-    return any(marker in text for marker in _BOOTSTRAP_MARKERS)
+    raw = ssh_run(instance_id, _STATUS_CMD, check=True, timeout=45)
+    age: float | None = None
+    if raw.strip().startswith("{"):
+        try:
+            data: dict[str, Any] = json.loads(raw)
+            age = progress_json_age_sec(data)
+        except json.JSONDecodeError:
+            pass
+    return PollSnapshot(raw=raw, heartbeat_age_sec=age)
 
 
 def status_is_blank(raw: str) -> bool:
@@ -106,9 +167,51 @@ def status_is_blank(raw: str) -> bool:
             return False
         return not data.get("phase") and not data.get("message")
     if text.startswith("log="):
-        payload = text[4:].strip()
-        return not payload
+        return not text[4:].strip()
     return False
+
+
+def _unchanged_bucket(seconds: float) -> int:
+    if seconds < UNCHANGED_WARN_SEC:
+        return 0
+    return int(seconds // 60)
+
+
+def _append_json_fields(parts: list[str], data: dict[str, Any]) -> None:
+    phase = str(data.get("phase", "?"))
+    parts.append(phase)
+    if phase == "prefetch":
+        pi = data.get("prefetch_index")
+        pt = data.get("prefetch_total")
+        if pi is not None and pt is not None:
+            parts.append(f"{pi}/{pt}")
+        model = data.get("model")
+        if model:
+            parts.append(str(model))
+    elif phase == "matrix":
+        ji = data.get("job_index")
+        jt = data.get("job_total")
+        if ji is not None and jt is not None:
+            parts.append(f"{ji}/{jt}")
+        model = data.get("model")
+        prompt_id = data.get("prompt_id")
+        if model and prompt_id:
+            parts.append(f"{model}/{prompt_id}")
+        elif model:
+            parts.append(str(model))
+        stage = data.get("stage")
+        if stage:
+            parts.append(str(stage))
+        last = data.get("last_result")
+        if last:
+            parts.append(f"last={last}")
+    else:
+        msg = data.get("message")
+        if msg:
+            parts.append(str(msg))
+        model = data.get("model")
+        if model:
+            parts.append(str(model))
 
 
 def format_progress_line(
@@ -116,6 +219,9 @@ def format_progress_line(
     raw: str,
     elapsed: float,
     remaining: float,
+    *,
+    unchanged_sec: float | None = None,
+    heartbeat_age: float | None = None,
 ) -> str:
     parts: list[str] = [f"instance {instance_id}:"]
 
@@ -127,40 +233,10 @@ def format_progress_line(
         except json.JSONDecodeError:
             data = {}
         if data:
-            phase = str(data.get("phase", "?"))
-            parts.append(phase)
-            if phase == "prefetch":
-                pi = data.get("prefetch_index")
-                pt = data.get("prefetch_total")
-                if pi is not None and pt is not None:
-                    parts.append(f"{pi}/{pt}")
-                model = data.get("model")
-                if model:
-                    parts.append(str(model))
-            elif phase == "matrix":
-                ji = data.get("job_index")
-                jt = data.get("job_total")
-                if ji is not None and jt is not None:
-                    parts.append(f"{ji}/{jt}")
-                model = data.get("model")
-                prompt_id = data.get("prompt_id")
-                if model and prompt_id:
-                    parts.append(f"{model}/{prompt_id}")
-                elif model:
-                    parts.append(str(model))
-                stage = data.get("stage")
-                if stage:
-                    parts.append(str(stage))
-            else:
-                msg = data.get("message")
-                if msg:
-                    parts.append(str(msg))
-                model = data.get("model")
-                if model:
-                    parts.append(str(model))
-            last = data.get("last_result")
-            if last:
-                parts.append(f"last={last}")
+            _append_json_fields(parts, data)
+            hb = heartbeat_age if heartbeat_age is not None else progress_json_age_sec(data)
+            if hb is not None and hb >= HEARTBEAT_STALE_SEC:
+                parts.append(f"heartbeat_stale={_format_duration(hb)}")
         else:
             parts.append("waiting")
     elif raw.strip():
@@ -174,8 +250,26 @@ def format_progress_line(
     parts.append(f"{_format_duration(elapsed)} elapsed")
     if remaining > 0:
         parts.append(f"{_format_duration(remaining)} left")
+    if unchanged_sec is not None and unchanged_sec >= UNCHANGED_WARN_SEC:
+        parts.append(f"(unchanged {_format_duration(unchanged_sec)})")
 
     return "  " + "  ".join(parts)
+
+
+def format_hint_line(instance_id: int, hint: str) -> str:
+    return f"    hint: {_truncate_msg(hint)} (see: vastai logs {instance_id} --tail 80)"
+
+
+def _should_print_progress(
+    *,
+    print_key: str,
+    last_print_key: str,
+    last_print_time: float,
+    now: float,
+) -> bool:
+    if print_key != last_print_key:
+        return True
+    return (now - last_print_time) >= KEEPALIVE_SEC
 
 
 def wait_for_matrix(instance_id: int) -> str:
@@ -183,6 +277,11 @@ def wait_for_matrix(instance_id: int) -> str:
     start = time.time()
     deadline = start + MATRIX_TIMEOUT_SEC
     ssh_fails = 0
+    status_first_seen = time.time()
+    last_status_key = ""
+    last_print_key = ""
+    last_print_time = 0.0
+
     while time.time() < deadline:
         now = time.time()
         status = instance_status(instance_id)
@@ -191,7 +290,8 @@ def wait_for_matrix(instance_id: int) -> str:
             return status
 
         try:
-            raw = fetch_matrix_status(instance_id)
+            snap = fetch_poll_snapshot(instance_id)
+            raw = snap.raw
             ssh_fails = 0
         except (RuntimeError, OSError, TimeoutError) as exc:
             ssh_fails += 1
@@ -212,10 +312,39 @@ def wait_for_matrix(instance_id: int) -> str:
             print(f"  instance {instance_id} matrix finished (exit {code or '?'})")
             return "done"
 
-        elapsed = now - start
-        remaining = deadline - now
-        print(format_progress_line(instance_id, raw, elapsed, remaining))
-        if status_is_blank(raw) and elapsed >= STARTUP_GRACE_SEC:
+        status_key = raw.strip()
+        if status_key != last_status_key:
+            status_first_seen = now
+            last_status_key = status_key
+
+        unchanged_sec = now - status_first_seen
+        unchanged_bucket = _unchanged_bucket(unchanged_sec)
+        show_hint = use_onstart_transport() and unchanged_sec >= UNCHANGED_WARN_SEC
+        hint = snap.hint if show_hint else ""
+        print_key = f"{status_key}|{hint}|{unchanged_bucket}"
+
+        if _should_print_progress(
+            print_key=print_key,
+            last_print_key=last_print_key,
+            last_print_time=last_print_time,
+            now=now,
+        ):
+            print(
+                format_progress_line(
+                    instance_id,
+                    raw,
+                    now - start,
+                    deadline - now,
+                    unchanged_sec=unchanged_sec if unchanged_bucket else None,
+                    heartbeat_age=snap.heartbeat_age_sec,
+                )
+            )
+            if hint:
+                print(format_hint_line(instance_id, hint))
+            last_print_key = print_key
+            last_print_time = now
+
+        if status_is_blank(raw) and (now - start) >= STARTUP_GRACE_SEC:
             print(
                 f"  instance {instance_id}: no progress in logs/files after "
                 f"{STARTUP_GRACE_SEC}s — harness did not start"

@@ -12,12 +12,14 @@ nvidia-smi || { echo "No GPU"; exit 1; }
 
 export DEBIAN_FRONTEND=noninteractive
 if command -v apt-get >/dev/null 2>&1; then
+  python3 progress.py --phase onstart --message apt_packages
   apt-get update -qq
   apt-get install -y -qq git curl wget python3 procps build-essential >/dev/null 2>&1 || true
 fi
 
 export PATH="${HOME}/.local/bin:${PATH}"
 if ! command -v uv >/dev/null 2>&1; then
+  python3 progress.py --phase onstart --message uv_install
   curl -LsSf https://astral.sh/uv/install.sh | sh
   # shellcheck disable=SC1091
   source "${HOME}/.local/bin/env" 2>/dev/null || true
@@ -27,16 +29,17 @@ fi
 uv venv .venv
 # shellcheck disable=SC1091
 source .venv/bin/activate
+python3 progress.py --phase onstart --message pip_base
 uv pip install -q pyyaml requests huggingface_hub psutil
 
 python3 progress.py --phase onstart --message setup_venv
 
 if [[ -f "$BAKEOFF_ROOT/install_stack.sh" ]]; then
-  python3 progress.py --phase install --message install_stack
   bash "$BAKEOFF_ROOT/install_stack.sh" || echo "WARN: install_stack partial failure"
 fi
 
 if [[ -n "${HF_TOKEN:-}" ]]; then
+  python3 progress.py --phase onstart --message hf_login
   huggingface-cli login --token "$HF_TOKEN" --add-to-git-credential 2>/dev/null || \
     python3 -c "from huggingface_hub import login; login(token='$HF_TOKEN')"
 fi

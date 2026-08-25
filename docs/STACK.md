@@ -6,21 +6,22 @@
 | CUDA | Blackwell | ≥ 12.8 | ≥ 12.8 |
 | PyTorch | From base image | sm_120 | sm_121 |
 | ComfyUI | git HEAD @ run date | `/workspace/ComfyUI` via `install_stack.sh` | ARM build if available |
-| vLLM | ≥ 0.27.x | Qwen NVFP4; `--tensor-parallel-size 2` on 2-GPU SKUs | Qwen if wheels exist |
-| llama.cpp | server binary | DeepSeek IQ2 GGUF; layer split on 2-GPU SKUs | Same |
+| vLLM | ≥ 0.27.x | Qwen NVFP4; `--tensor-parallel-size 2` on 2-GPU SKUs | **Skipped on aarch64** (no reliable wheel) |
+| llama.cpp | server binary | DeepSeek IQ2 GGUF; layer split on 2-GPU SKUs | Same (best-effort pip) |
 | Python | 3.10+ | remote `uv venv` in `onstart.sh` | remote `uv venv` |
 
 ## Remote install (`scripts/remote/install_stack.sh`)
 
-Called from `onstart.sh` on each Vast instance:
+Called from `onstart.sh` on each Vast instance. Each long step emits `[progress] install <message>` (visible in `vastai logs` and the local poller):
 
-1. Clone ComfyUI → `/workspace/ComfyUI`
-2. `uv pip install -r ComfyUI/requirements.txt`
-3. Clone custom nodes (see `comfyui_nodes` in `config/models.yaml`):
+1. Clone ComfyUI → `/workspace/ComfyUI` (`clone_comfyui`)
+2. `uv pip install -r ComfyUI/requirements.txt` (`pip_comfyui`)
+3. Clone custom nodes (`clone_ltxvideo`, `clone_hunyuan_image_3`, or `clone_*_failed`):
    - ComfyUI-LTXVideo (MiniMax H3)
    - ComfyUI-HunyuanImage-3 (Hunyuan Image 3)
-4. `uv pip install vllm` (best-effort)
-5. `uv pip install llama-cpp-python` for `llama-server` (DeepSeek GGUF)
+4. `uv pip install vllm` (`pip_vllm`) — **skipped on aarch64** (`skip_vllm_arm64`); timeout `INSTALL_VLLM_TIMEOUT_SEC` (default 600s) on x86
+5. `uv pip install llama-cpp-python` (`pip_llama_cpp`) for `llama-server` (DeepSeek GGUF)
+6. `install_stack_done`
 
 ## ComfyUI workflows
 

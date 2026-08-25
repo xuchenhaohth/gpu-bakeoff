@@ -16,8 +16,9 @@ from lib.instance_lifecycle import (
 from lib.matrix_poll import wait_for_matrix
 from lib.pull_results import merge_results, pull_sku
 from lib.push_and_run import push_and_run
+from lib.sku_blocks import count_runnable_skus, iter_runnable_skus
 from lib.ssh_preflight import ensure_ssh_ready
-from lib.transport import use_onstart_transport
+from lib.transport import get_transport, use_onstart_transport
 from lib.vast import ROOT, read_yaml, save_instances, vastai
 from lib.wait_running import wait_until_running
 
@@ -25,6 +26,20 @@ OFFERS_PATH = ROOT / "config" / "offers.yaml"
 MATRIX_PATH = ROOT / "config" / "matrix.yaml"
 MATRIX_TIMEOUT_SEC = int(os.environ.get("MATRIX_TIMEOUT_SEC", "28800"))
 MAX_HOURS_PER_SKU = MATRIX_TIMEOUT_SEC / 3600
+
+
+def format_sku_banner(
+    sku_id: str,
+    index: int,
+    total: int,
+    rec: dict[str, Any],
+) -> str:
+    iid = rec.get("instance_id", "?")
+    dph = float(rec.get("dph_total") or 0)
+    return (
+        f"== SKU {sku_id} ({index}/{total}) transport={get_transport()} "
+        f"instance={iid} dph=${dph:.2f}/hr =="
+    )
 
 
 def spend_check(offers: dict[str, Any]) -> None:
@@ -43,16 +58,14 @@ def spend_check(offers: dict[str, Any]) -> None:
     total_dph = 0.0
     peak_dph = 0.0
     count = 0
-    for sku, block in offers.get("skus", {}).items():
-        cands = block.get("candidates") or []
-        if not cands and sku == "dgx_spark_gb10":
-            continue
-        if not cands:
-            raise SystemExit(f"No candidates for {sku} — run 01_search_offers.py")
-        dph = float(cands[0].get("dph_total") or 0)
+    for _sku_id, block in iter_runnable_skus(offers):
+        dph = float(block["candidates"][0].get("dph_total") or 0)
         total_dph += dph
         peak_dph = max(peak_dph, dph)
         count += 1
+    if count == 0:
+        raise SystemExit("No runnable SKUs — run 01_search_offers.py")
+
     projected = total_dph * MAX_HOURS_PER_SKU
     print(
         f"Credit: ${credit:.2f} | {count} SKUs serial × {MAX_HOURS_PER_SKU:.1f}h "
@@ -91,9 +104,9 @@ def run_one_sku(
     try:
         if mode in ("fresh", "wait", "push_and_run") and not use_onstart_transport():
             push_and_run(iid, sku_id)
-        elif mode == "push_and_run" and use_onstart_transport():
-            print("  onstart transport: harness starts at boot (no SSH push)")
         running["matrix_status"] = wait_for_matrix(iid)
+        pull_via = "Hugging Face" if use_onstart_transport() else "SSH"
+        print(f"  {sku_id}: matrix {running['matrix_status']} — pulling results via {pull_via}")
         pull_sku(iid, sku_id)
         return True, running
     finally:
@@ -116,6 +129,7 @@ def run_serial() -> int:
 
     attempted = 0
     succeeded = 0
+    planned_total = count_runnable_skus(offers)
 
     for sku_id, block in offers.get("skus", {}).items():
         cands = block.get("candidates") or []
@@ -130,15 +144,17 @@ def run_serial() -> int:
             continue
 
         attempted += 1
-        print(f"\n== SKU {sku_id} ({attempted}) ==")
 
         prev_rec = state.get("instances", {}).get(sku_id)
         rec, backup_ids, mode = resolve_sku_instance(sku_id, sku_meta, cands, prev_rec)
         if not rec:
+            print(f"\n== SKU {sku_id} ({attempted}/{planned_total}) ==")
             print(f"All candidates failed validation or launch for {sku_id}")
             state["instances"][sku_id] = {"sku_id": sku_id, "error": "launch_failed"}
             save_instances(state)
             continue
+
+        print(f"\n{format_sku_banner(sku_id, attempted, planned_total, rec)}")
 
         rec["backup_offer_ids"] = backup_ids
         state["instances"][sku_id] = rec
@@ -158,10 +174,6 @@ def run_serial() -> int:
 
         state["instances"][sku_id] = rec
         save_instances(state)
-        if rec.get("destroyed"):
-            print(f"  {sku_id} complete — destroyed instance {rec.get('instance_id')}")
-        else:
-            print(f"  {sku_id} complete — instance {rec.get('instance_id')}")
 
     merge_results()
     print(f"\nSaved {ROOT / 'config' / 'instances.json'}")

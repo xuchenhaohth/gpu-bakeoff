@@ -173,10 +173,6 @@ def vastai_copy(src: str, dst: str, check: bool = True) -> None:
         )
 
 
-def vastai_execute(instance_id: int, cmd: str, check: bool = True) -> None:
-    vastai_execute_output(instance_id, cmd, check=check)
-
-
 def vastai_logs(instance_id: int, *, tail: int = 500) -> str:
     """Fetch container logs (used for onstart transport progress polling)."""
     proc = subprocess.run(
@@ -189,29 +185,6 @@ def vastai_logs(instance_id: int, *, tail: int = 500) -> str:
         return ""
     parts = [proc.stdout or "", proc.stderr or ""]
     return "\n".join(p for p in parts if p.strip()).strip()
-
-
-def vastai_execute_output(instance_id: int, cmd: str, check: bool = False) -> str:
-    """Run `vastai execute` and return stdout.
-
-    Not usable on a *running* instance (API 400: use SSH). The CLI often exits 0
-    on that error — this helper still treats stderr/JSON errors as failure.
-    """
-    proc = subprocess.run(
-        _vastai_cmd("execute", str(instance_id), cmd),
-        capture_output=True,
-        text=True,
-    )
-    err = vast_cli_error(proc.stdout, proc.stderr)
-    if proc.returncode != 0 or err:
-        msg = err or f"exit {proc.returncode}"
-        if check:
-            raise RuntimeError(
-                f"vastai execute failed on {instance_id}: {msg}\n"
-                f"stderr: {proc.stderr}\nstdout: {proc.stdout}"
-            )
-        return ""
-    return proc.stdout.strip()
 
 
 def read_yaml(path: Path) -> dict[str, Any]:

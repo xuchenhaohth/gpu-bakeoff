@@ -19,8 +19,10 @@ fi
 
 mkdir -p "$BAKEOFF_ROOT"
 rm -rf "$CLONE_DIR"
+echo "[progress] onstart git_clone"
 git clone --depth 1 --branch "$GIT_REF" "$GIT_URL" "$CLONE_DIR"
 
+echo "[progress] onstart rsync_harness"
 rsync -a "${CLONE_DIR}/scripts/remote/" "$BAKEOFF_ROOT/"
 mkdir -p "$BAKEOFF_ROOT/config"
 cp -a "${CLONE_DIR}/config/." "$BAKEOFF_ROOT/config/"
