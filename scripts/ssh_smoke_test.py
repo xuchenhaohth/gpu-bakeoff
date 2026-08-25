@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from lib.destroy import destroy_instance  # noqa: E402
 from lib.launch_instance import resolve_image  # noqa: E402
+from lib.push_and_run import push_harness  # noqa: E402
 from lib.sku_offers import validate_offer  # noqa: E402
 from lib.ssh_preflight import attach_instance_ssh, ensure_ssh_ready  # noqa: E402
 from lib.ssh_remote import log_ssh_endpoint, ssh_probe, wait_for_ssh  # noqa: E402
@@ -130,7 +131,7 @@ def launch_smoke(
     }
 
 
-def run_smoke(rec: dict[str, Any], sku_id: str) -> int:
+def run_smoke(rec: dict[str, Any], sku_id: str, *, push_harness_flag: bool = False) -> int:
     iid = int(rec["instance_id"])
     print(f"Waiting instance {iid}...")
     status = wait_instance(iid)
@@ -152,6 +153,11 @@ def run_smoke(rec: dict[str, Any], sku_id: str) -> int:
         return 1
     user = lines[1] if len(lines) > 1 else "?"
     print(f"SSH smoke test OK — instance {iid} user={user}")
+
+    if push_harness_flag:
+        push_harness(iid)
+        print(f"Harness push verified on instance {iid}")
+
     return 0
 
 
@@ -187,6 +193,11 @@ def main() -> int:
         "--label",
         default=DEFAULT_LABEL,
         help=f"Instance label (default: {DEFAULT_LABEL})",
+    )
+    parser.add_argument(
+        "--push",
+        action="store_true",
+        help="After SSH auth, push harness via tar|ssh and verify start_matrix.sh",
     )
     args = parser.parse_args()
 
@@ -224,7 +235,7 @@ def main() -> int:
             label=args.label,
             disk_gb=args.disk,
         )
-        exit_code = run_smoke(rec, sku_id)
+        exit_code = run_smoke(rec, sku_id, push_harness_flag=args.push)
     except KeyboardInterrupt:
         print("\nInterrupted — destroying instance")
         exit_code = 130

@@ -44,7 +44,7 @@ uv run python scripts/dry_run_local.py
 |------|---------|
 | Check env | `./scripts/00_check_env.sh` |
 | Discover offers | `uv run python scripts/01_search_offers.py` |
-| SSH smoke test (one offer, ~minutes) | `uv run python scripts/ssh_smoke_test.py --sku dgx_spark_gb10 --candidate-index 1` |
+| SSH smoke test (one offer, ~minutes) | `uv run python scripts/ssh_smoke_test.py --sku dgx_spark_gb10 --candidate-index 1 --push` |
 | Serial bake-off (one SKU at a time) | `uv run python scripts/02_run_bakeoff.py` |
 | Pull HF results only (no GPU) | `uv run python scripts/03_pull_hf_results.py --sku <sku_id>` |
 | Boss pack | `uv run python scripts/fill_boss_pack.py` then review `docs/procurement/BOSS_PACK.md` |

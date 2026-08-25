@@ -151,8 +151,11 @@ State is saved to `config/instances.json` immediately after resolve/launch so `-
 
 ## File copy (SSH transport only)
 
+Harness push and result pull use **tar over the same `ssh-url` session** as matrix polling (`Push (ssh)` / `Pull (ssh)` in logs). Legacy `vastai copy` is not used for running instances — it can land files outside the container.
+
 ```bash
-vastai copy local:./scripts/remote/ <INSTANCE_ID>:/workspace/bakeoff/
+# Manual smoke: SSH auth + optional harness push (~minutes, 40GB disk)
+uv run python scripts/ssh_smoke_test.py --sku dgx_spark_gb10 --candidate-index 1 --push
 ```
 
 **Never** copy to `/root` or `/` — breaks SSH on some hosts.
@@ -195,6 +198,7 @@ If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 | `Permission denied` for full retry window (~80s) | Host never accepted your key — not image lag. Orchestrator destroys that instance and tries the next offer in `offers.yaml`. `diag ls/ps` showing `SSH failed: …` means auth failed (not an empty VM). |
 | `ssh auth failed (all candidates)` | Every Spark (or SKU) offer failed SSH — destroy stuck instances (`--destroy-only`) or pick new offers via `01_search_offers.py` |
 | Pre-flight SSH on one offer | `uv run python scripts/ssh_smoke_test.py --sku dgx_spark_gb10 --candidate-index 1` (40GB disk, destroy on exit) |
+| `start_matrix.sh: No such file or directory` | `vastai copy` missed the container — harness is pushed via SSH tar now. Smoke: `ssh_smoke_test.py --push`. Check log for `Push (ssh)` and `Harness verified`. |
 | Same `install pip_*` line with `(unchanged Nm)` | Normal during long pip — read the `hint:` line or `vastai logs --tail 80` |
 | Stuck on `install install_stack` (old harness) | Push latest `main` — expect sub-steps `pip_comfyui`, `pip_vllm`, etc. |
 | `install skip_vllm_arm64` on Spark | Expected — vLLM has no reliable aarch64 wheel; Qwen LLM jobs stub |

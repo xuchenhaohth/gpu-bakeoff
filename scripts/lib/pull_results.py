@@ -11,24 +11,32 @@ from pathlib import Path
 
 from lib.hf_results import pull_sku_from_hf, sku_matrix_path, verify_sku_matrix
 from lib.ssh_preflight import attach_instance_ssh
-from lib.ssh_remote import ssh_probe, wait_for_ssh
+from lib.ssh_remote import (
+    HARNESS_ROOT,
+    ssh_probe,
+    ssh_pull_dir,
+    ssh_pull_file,
+    wait_for_ssh,
+)
 from lib.transport import use_onstart_transport
-from lib.vast import ROOT, vastai_copy
+from lib.vast import ROOT
 
 RESULTS = ROOT / "results"
-RUN_LOG_REMOTE = "/workspace/bakeoff/run.log"
+RUN_LOG_REMOTE = f"{HARNESS_ROOT}/run.log"
 
 
-def pull_remote(instance_id: int, remote: str, local: Path, *, is_dir: bool) -> None:
-    src = f"{instance_id}:{remote}"
+def pull_remote_ssh(
+    instance_id: int,
+    remote: str,
+    local: Path,
+    *,
+    is_dir: bool,
+    required: bool = True,
+) -> None:
     if is_dir:
-        local.mkdir(parents=True, exist_ok=True)
-        dst = f"local:{local}/"
+        ssh_pull_dir(instance_id, remote, local, required=required)
     else:
-        local.parent.mkdir(parents=True, exist_ok=True)
-        dst = f"local:{local}"
-    print(f"Pull {src} -> {dst}")
-    vastai_copy(src, dst, check=False)
+        ssh_pull_file(instance_id, remote, local, required=required)
 
 
 def sku_has_results(sku_id: str) -> bool:
@@ -86,9 +94,15 @@ def pull_sku(instance_id: int, sku_id: str) -> None:
     sku_dir = RESULTS / sku_id
     attach_instance_ssh(instance_id)
     wait_for_ssh(instance_id)
-    pull_remote(instance_id, "/workspace/bakeoff/results/", sku_dir, is_dir=True)
-    pull_remote(instance_id, "/workspace/bakeoff/artifacts/", sku_dir / "artifacts", is_dir=True)
-    pull_remote(instance_id, RUN_LOG_REMOTE, sku_dir / "run.log", is_dir=False)
+    pull_remote_ssh(instance_id, f"{HARNESS_ROOT}/results/", sku_dir, is_dir=True)
+    pull_remote_ssh(
+        instance_id,
+        f"{HARNESS_ROOT}/artifacts/",
+        sku_dir / "artifacts",
+        is_dir=True,
+        required=False,
+    )
+    pull_remote_ssh(instance_id, RUN_LOG_REMOTE, sku_dir / "run.log", is_dir=False, required=False)
     verify_sku_matrix(RESULTS, sku_id)
 
 
@@ -99,7 +113,13 @@ def pull_run_log_best_effort(instance_id: int, sku_id: str) -> None:
     try:
         attach_instance_ssh(instance_id)
         wait_for_ssh(instance_id)
-        pull_remote(instance_id, RUN_LOG_REMOTE, RESULTS / sku_id / "run.log", is_dir=False)
+        pull_remote_ssh(
+            instance_id,
+            RUN_LOG_REMOTE,
+            RESULTS / sku_id / "run.log",
+            is_dir=False,
+            required=False,
+        )
     except Exception as exc:
         print(f"  {sku_id}: could not pull run.log: {exc}")
 
@@ -109,7 +129,7 @@ def dump_ssh_diagnostics(instance_id: int) -> None:
     if use_onstart_transport():
         return
     probes = [
-        ("ls", "ls -la /workspace/bakeoff /workspace/bakeoff/results 2>&1 | head -n 30"),
+        ("ls", f"ls -la {HARNESS_ROOT} {HARNESS_ROOT}/results 2>&1 | head -n 30"),
         ("ps", "ps aux | grep -E 'onstart|run_matrix|python3' | grep -v grep || echo no-procs"),
         ("run.log", f"tail -n 40 {RUN_LOG_REMOTE} 2>&1 || echo no-runlog"),
     ]

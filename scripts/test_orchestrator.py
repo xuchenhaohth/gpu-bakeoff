@@ -18,7 +18,15 @@ from lib.matrix_poll import (
     status_is_blank,
 )
 from lib.pull_results import sku_has_results
-from lib.ssh_remote import is_ssh_auth_denied, is_ssh_retryable, parse_ssh_url, SshNotReadyError
+from lib.ssh_remote import (
+    HARNESS_ROOT,
+    HARNESS_RUN_MATRIX,
+    HARNESS_START_SCRIPT,
+    is_ssh_auth_denied,
+    is_ssh_retryable,
+    parse_ssh_url,
+    SshNotReadyError,
+)
 from lib.vast import vast_cli_error
 
 
@@ -73,6 +81,35 @@ class SshRetryTests(unittest.TestCase):
         err = SshNotReadyError(12345, "ssh failed", auth_denied=True)
         self.assertEqual(err.instance_id, 12345)
         self.assertTrue(err.auth_denied)
+
+    def test_harness_paths(self) -> None:
+        self.assertEqual(HARNESS_ROOT, "/workspace/bakeoff")
+        self.assertTrue(HARNESS_START_SCRIPT.endswith("start_matrix.sh"))
+        self.assertTrue(HARNESS_RUN_MATRIX.endswith("run_matrix.py"))
+
+    def test_verify_harness_raises_when_missing(self) -> None:
+        from unittest.mock import patch
+
+        from lib.ssh_remote import verify_harness
+
+        with patch(
+            "lib.ssh_remote.ssh_probe",
+            return_value=(False, "", "ssh failed"),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                verify_harness(99)
+            self.assertIn("harness verify", str(ctx.exception))
+
+    def test_verify_harness_ok(self) -> None:
+        from unittest.mock import patch
+
+        from lib.ssh_remote import verify_harness
+
+        with patch(
+            "lib.ssh_remote.ssh_probe",
+            return_value=(True, "verified", ""),
+        ):
+            verify_harness(99)
 
 
 class StartMatrixScriptTests(unittest.TestCase):

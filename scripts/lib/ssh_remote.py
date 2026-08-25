@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 from lib.vast import _vastai_cmd, local_ssh_identity, vast_cli_error
@@ -14,6 +16,10 @@ _ssh_url_cache: dict[int, str] = {}
 
 SSH_WAIT_ATTEMPTS = int(os.environ.get("SSH_WAIT_ATTEMPTS", "20"))
 SSH_WAIT_DELAY_SEC = float(os.environ.get("SSH_WAIT_DELAY_SEC", "4"))
+
+HARNESS_ROOT = "/workspace/bakeoff"
+HARNESS_START_SCRIPT = f"{HARNESS_ROOT}/start_matrix.sh"
+HARNESS_RUN_MATRIX = f"{HARNESS_ROOT}/run_matrix.py"
 
 
 class SshNotReadyError(RuntimeError):
@@ -189,6 +195,187 @@ def ssh_run(
             raise RuntimeError(err)
         return ""
     return stdout
+
+
+def _ssh_connection(instance_id: int) -> tuple[Path, str, str, int]:
+    identity = local_ssh_identity()
+    if identity is None:
+        raise RuntimeError(
+            "No SSH private key for ~/.ssh/id_ed25519.pub (or id_rsa.pub). "
+            "Vast has no VM password."
+        )
+    url = fetch_ssh_url(instance_id)
+    user, host, port = parse_ssh_url(url)
+    return identity, user, host, port
+
+
+def ssh_push_dir(
+    instance_id: int,
+    local_dir: Path,
+    remote_dir: str,
+    *,
+    timeout: int = 600,
+) -> None:
+    """Push a local directory tree into the container via tar over SSH."""
+    local_path = local_dir.resolve()
+    if not local_path.is_dir():
+        raise RuntimeError(f"local directory missing: {local_path}")
+
+    identity, user, host, port = _ssh_connection(instance_id)
+    remote = remote_dir.rstrip("/")
+    remote_cmd = f"mkdir -p {shlex.quote(remote)} && tar xzf - -C {shlex.quote(remote)}"
+    ssh_cmd = _ssh_base_cmd(str(identity), user, host, port, remote_cmd)
+
+    print(f"Push (ssh) {local_path} -> instance {instance_id}:{remote}/")
+
+    tar_proc = subprocess.Popen(
+        ["tar", "czf", "-", "-C", str(local_path), "."],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        ssh_proc = subprocess.Popen(
+            ssh_cmd,
+            stdin=tar_proc.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if tar_proc.stdout is not None:
+            tar_proc.stdout.close()
+        _, ssh_err = ssh_proc.communicate(timeout=timeout)
+        _, tar_err = tar_proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        invalidate_ssh_url(instance_id)
+        raise RuntimeError(f"ssh push {instance_id} timed out after {timeout}s") from None
+
+    if tar_proc.returncode != 0:
+        invalidate_ssh_url(instance_id)
+        raise RuntimeError(
+            f"tar pack failed ({tar_proc.returncode}): {tar_err.decode(errors='replace').strip()}"
+        )
+    if ssh_proc.returncode != 0:
+        invalidate_ssh_url(instance_id)
+        err_text = ssh_err.decode(errors="replace").strip()
+        raise RuntimeError(f"ssh push {instance_id} failed: {err_text or f'exit {ssh_proc.returncode}'}")
+
+
+def ssh_pull_dir(
+    instance_id: int,
+    remote_dir: str,
+    local_dir: Path,
+    *,
+    timeout: int = 600,
+    required: bool = True,
+) -> None:
+    """Pull a remote directory tree via tar over SSH."""
+    local_path = local_dir.resolve()
+    local_path.mkdir(parents=True, exist_ok=True)
+
+    identity, user, host, port = _ssh_connection(instance_id)
+    remote = remote_dir.rstrip("/")
+    if required:
+        remote_cmd = (
+            f"test -d {shlex.quote(remote)} && "
+            f"tar czf - -C {shlex.quote(remote)} ."
+        )
+    else:
+        remote_cmd = (
+            f"if test -d {shlex.quote(remote)}; then "
+            f"tar czf - -C {shlex.quote(remote)} .; fi"
+        )
+    ssh_cmd = _ssh_base_cmd(str(identity), user, host, port, remote_cmd)
+
+    print(f"Pull (ssh) instance {instance_id}:{remote}/ -> {local_path}/")
+
+    try:
+        ssh_proc = subprocess.Popen(
+            ssh_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        tar_proc = subprocess.Popen(
+            ["tar", "xzf", "-", "-C", str(local_path)],
+            stdin=ssh_proc.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if ssh_proc.stdout is not None:
+            ssh_proc.stdout.close()
+        _, tar_err = tar_proc.communicate(timeout=timeout)
+        _, ssh_err = ssh_proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        invalidate_ssh_url(instance_id)
+        raise RuntimeError(f"ssh pull {instance_id} timed out after {timeout}s") from None
+
+    if ssh_proc.returncode != 0:
+        invalidate_ssh_url(instance_id)
+        err_text = ssh_err.decode(errors="replace").strip()
+        raise RuntimeError(f"ssh pull {instance_id} failed: {err_text or f'exit {ssh_proc.returncode}'}")
+    if tar_proc.returncode != 0:
+        invalidate_ssh_url(instance_id)
+        raise RuntimeError(
+            f"tar unpack failed ({tar_proc.returncode}): "
+            f"{tar_err.decode(errors='replace').strip()}"
+        )
+
+
+def ssh_pull_file(
+    instance_id: int,
+    remote_file: str,
+    local_file: Path,
+    *,
+    timeout: int = 120,
+    required: bool = True,
+) -> None:
+    """Pull a single remote file over SSH."""
+    local_path = local_file.resolve()
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    identity, user, host, port = _ssh_connection(instance_id)
+    quoted = shlex.quote(remote_file)
+    if required:
+        remote_cmd = f"test -f {quoted} && cat {quoted}"
+    else:
+        remote_cmd = f"if test -f {quoted}; then cat {quoted}; fi"
+
+    print(f"Pull (ssh) instance {instance_id}:{remote_file} -> {local_path}")
+
+    ssh_cmd = _ssh_base_cmd(str(identity), user, host, port, remote_cmd)
+    try:
+        proc = subprocess.run(
+            ssh_cmd,
+            capture_output=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired:
+        invalidate_ssh_url(instance_id)
+        raise RuntimeError(f"ssh pull file {instance_id} timed out after {timeout}s") from None
+
+    if proc.returncode != 0:
+        invalidate_ssh_url(instance_id)
+        err = (proc.stderr or proc.stdout or f"ssh exit {proc.returncode}").strip()
+        raise RuntimeError(f"ssh pull file {instance_id} failed: {err}")
+
+    if not proc.stdout and required:
+        raise RuntimeError(f"ssh pull file {instance_id}: empty output for {remote_file}")
+
+    local_path.write_bytes(proc.stdout)
+
+
+def verify_harness(instance_id: int, *, timeout: int = 60) -> None:
+    """Fail closed if bakeoff harness files are missing after push."""
+    cmd = (
+        f"test -f {shlex.quote(HARNESS_START_SCRIPT)} && "
+        f"test -f {shlex.quote(HARNESS_RUN_MATRIX)} && echo verified"
+    )
+    ok, out, err = ssh_probe(instance_id, cmd, timeout=timeout)
+    if not ok or out.strip() != "verified":
+        raise RuntimeError(
+            f"harness verify {instance_id} failed: harness files missing under {HARNESS_ROOT}"
+            + (f" ({err})" if err else "")
+        )
+    print(f"  Harness verified on instance {instance_id}: start_matrix.sh + run_matrix.py")
 
 
 def wait_for_ssh(
