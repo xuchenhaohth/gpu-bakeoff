@@ -30,10 +30,10 @@ Same prompts and Layer A quantization for fair comparison. LLM jobs use tensor-p
 
 | Tier | Machine | Indicative price | Best for |
 |------|---------|------------------|----------|
-| **1** | DGX Spark / GX10 (128 GB unified) | A$8.5k–11k | Low power, large model **fit**; slower media |
+| **1** | DGX Spark / GX10 (128 GB unified) | A$8.5k–14k | Low power, large model **fit**; slower media |
 | **1b** | RTX 5090 workstation (32 GB) | A$10k–13k | Fast desk AI; tight on largest video models |
-| **2** | 1× RTX PRO 6000 (96 GB ECC) | A$26k–33k | **Business workstation** — media + Qwen native |
-| **3** | 2× RTX PRO 6000 (192 GB) | A$50k–70k | **DeepSeek native** + headroom |
+| **2** | 1× RTX PRO 6000 (96 GB ECC) | A$30k–38k | **Business workstation** — media + Qwen native |
+| **3** | 2× RTX PRO 6000 (192 GB) | A$53k–70k | **DeepSeek IQ2 + long context** (layer-split llama.cpp) |
 
 See [AU_QUOTES.md](AU_QUOTES.md) for retailer links and warranty. Stakeholder-facing copy: [CONFLUENCE.md](CONFLUENCE.md).
 
@@ -55,7 +55,7 @@ _Paste from FIT_MATRIX.md or report.html_
 
 _TBD after run — examples:_
 
-- DeepSeek **does not fit** on 5090; Tier 3 or cloud API only for native quality.
+- DeepSeek **does not fit** on 5090; IQ2 **loads on Spark** (128 GB) but is bandwidth-limited; **1× PRO 6000** fits weights with almost no KV headroom; **2× PRO 6000** for usable context.
 - Hunyuan on 5090 required **_X_ GB host RAM** — hidden cost if we only buy the GPU.
 - Spark runs models but video wait time **_X_×** longer than PRO 6000.
 - Ideogram 4 works technically; **non-commercial** licence — not production generator.
