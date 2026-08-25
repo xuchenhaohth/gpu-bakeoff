@@ -6,20 +6,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from lib.ssh_preflight import attach_instance_ssh
-from lib.ssh_remote import fetch_ssh_url, ssh_run
+from lib.ssh_remote import fetch_ssh_url, ssh_run, wait_for_ssh
 from lib.vast import ROOT, vastai_copy
 
 REMOTE_DIR = ROOT / "scripts" / "remote"
 CONFIG_DIR = ROOT / "config"
-
-MATRIX_START_CMD = (
-    "chmod +x /workspace/bakeoff/onstart.sh /workspace/bakeoff/install_stack.sh && "
-    "mkdir -p /workspace/bakeoff/results && "
-    "cd /workspace/bakeoff && "
-    "setsid nohup bash -lc './onstart.sh && python3 run_matrix.py; "
-    "echo $? > /workspace/bakeoff/results/DONE' "
-    ">/workspace/bakeoff/run.log 2>&1 < /dev/null &"
-)
+START_SCRIPT = "/workspace/bakeoff/start_matrix.sh"
 
 
 def copy_to(instance_id: int, local: Path, remote: str) -> None:
@@ -32,10 +24,11 @@ def copy_to(instance_id: int, local: Path, remote: str) -> None:
 def push_and_run(instance_id: int, sku_id: str = "") -> None:
     label = f" ({sku_id})" if sku_id else ""
     attach_instance_ssh(instance_id)
+    wait_for_ssh(instance_id)
     copy_to(instance_id, REMOTE_DIR, "/workspace/bakeoff/")
     copy_to(instance_id, CONFIG_DIR, "/workspace/bakeoff/config/")
-    print(f"SSH start on {instance_id}{label}: {MATRIX_START_CMD[:80]}...")
-    ssh_run(instance_id, MATRIX_START_CMD, check=True, timeout=90)
+    print(f"SSH start on {instance_id}{label}: bash {START_SCRIPT}")
+    ssh_run(instance_id, f"bash {START_SCRIPT}", check=True, timeout=120)
     ssh_hint = fetch_ssh_url(instance_id)
     print(
         f"Started matrix on instance {instance_id}{label} — "

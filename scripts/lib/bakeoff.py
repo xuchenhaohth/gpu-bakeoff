@@ -14,7 +14,13 @@ from lib.instance_lifecycle import (
     resolve_sku_instance,
 )
 from lib.matrix_poll import wait_for_matrix
-from lib.pull_results import merge_results, pull_sku, sku_has_results
+from lib.pull_results import (
+    dump_ssh_diagnostics,
+    merge_results,
+    pull_run_log_best_effort,
+    pull_sku,
+    sku_has_results,
+)
 from lib.push_and_run import push_and_run
 from lib.sku_blocks import count_runnable_skus, iter_runnable_skus
 from lib.ssh_preflight import ensure_ssh_ready
@@ -111,13 +117,22 @@ def run_one_sku(
         if mode in ("fresh", "wait", "push_and_run") and not use_onstart_transport():
             push_and_run(iid, sku_id)
         running["matrix_status"] = wait_for_matrix(iid, sku_id)
+        status = running["matrix_status"]
+        if status != "done":
+            dump_ssh_diagnostics(iid)
+            pull_run_log_best_effort(iid, sku_id)
+            running["error"] = f"matrix {status}"
+            print(f"  {sku_id}: matrix {status} — instance {iid} kept for retry")
+            return False, running
         pull_via = "Hugging Face" if use_onstart_transport() else "SSH"
-        print(f"  {sku_id}: matrix {running['matrix_status']} — pulling results via {pull_via}")
+        print(f"  {sku_id}: matrix {status} — pulling results via {pull_via}")
         pull_sku(iid, sku_id)
         pulled_ok = True
         return True, running
     except Exception as exc:
-        print(f"  {sku_id}: pull failed — instance {iid} kept for retry: {exc}")
+        dump_ssh_diagnostics(iid)
+        pull_run_log_best_effort(iid, sku_id)
+        print(f"  {sku_id}: failed — instance {iid} kept for retry: {exc}")
         running["error"] = str(exc)
         return False, running
     finally:

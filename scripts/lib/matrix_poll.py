@@ -26,7 +26,7 @@ LOG_TAIL = 500
 DONE_PATH = "/workspace/bakeoff/results/DONE"
 PROGRESS_PATH = "/workspace/bakeoff/results/PROGRESS.json"
 RUN_LOG_PATH = "/workspace/bakeoff/run.log"
-HARNESS_PATH = "/workspace/bakeoff/onstart.sh"
+HARNESS_PID_PATH = "/workspace/bakeoff/results/HARNESS.pid"
 
 PROGRESS_MARKER = "[progress] "
 DONE_MARKER = "BAKEOFF_DONE"
@@ -76,7 +76,16 @@ def harness_present(instance_id: int) -> bool:
         if PROGRESS_MARKER in text:
             return True
         return any(marker in text for marker in _BOOTSTRAP_MARKERS)
-    return remote_file_exists(instance_id, HARNESS_PATH)
+    from lib.ssh_remote import ssh_run
+
+    cmd = (
+        f"if test -f {DONE_PATH}; then echo yes; "
+        f"elif test -f {PROGRESS_PATH}; then echo yes; "
+        f"elif test -f {HARNESS_PID_PATH} && kill -0 $(cat {HARNESS_PID_PATH}) 2>/dev/null; "
+        f"then echo yes; else echo no; fi"
+    )
+    out = ssh_run(instance_id, cmd, check=False, timeout=45)
+    return out.strip() == "yes"
 
 
 def parse_log_hint(log_text: str) -> str:

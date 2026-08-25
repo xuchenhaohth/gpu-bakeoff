@@ -3,12 +3,17 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
+import time
 from urllib.parse import urlparse
 
 from lib.vast import _vastai_cmd, local_ssh_identity, vast_cli_error
 
 _ssh_url_cache: dict[int, str] = {}
+
+SSH_WAIT_ATTEMPTS = int(os.environ.get("SSH_WAIT_ATTEMPTS", "20"))
+SSH_WAIT_DELAY_SEC = float(os.environ.get("SSH_WAIT_DELAY_SEC", "4"))
 
 
 def parse_ssh_url(url: str) -> tuple[str, str, int]:
@@ -56,6 +61,52 @@ def invalidate_ssh_url(instance_id: int) -> None:
     _ssh_url_cache.pop(instance_id, None)
 
 
+def is_ssh_retryable(msg: str) -> bool:
+    """True when SSH auth/connect errors may clear after attach/propagation."""
+    lowered = msg.lower()
+    return any(
+        token in lowered
+        for token in (
+            "permission denied",
+            "connection refused",
+            "connection timed out",
+            "connection reset",
+            "no route to host",
+            "ssh exit 255",
+            "timed out",
+            "try again",
+        )
+    )
+
+
+def _ssh_base_cmd(identity: str, user: str, host: str, port: int, command: str) -> list[str]:
+    return [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "LogLevel=ERROR",
+        "-o",
+        "ConnectTimeout=15",
+        "-o",
+        "PreferredAuthentications=publickey",
+        "-o",
+        "PasswordAuthentication=no",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-i",
+        identity,
+        "-p",
+        str(port),
+        f"{user}@{host}",
+        command,
+    ]
+
+
 def ssh_run(
     instance_id: int,
     command: str,
@@ -73,29 +124,7 @@ def ssh_run(
 
     url = fetch_ssh_url(instance_id)
     user, host, port = parse_ssh_url(url)
-    cmd = [
-        "ssh",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "UserKnownHostsFile=/dev/null",
-        "-o",
-        "LogLevel=ERROR",
-        "-o",
-        "ConnectTimeout=15",
-        "-o",
-        "PreferredAuthentications=publickey",
-        "-o",
-        "PasswordAuthentication=no",
-        "-i",
-        str(identity),
-        "-p",
-        str(port),
-        f"{user}@{host}",
-        command,
-    ]
+    cmd = _ssh_base_cmd(str(identity), user, host, port, command)
     try:
         proc = subprocess.run(
             cmd,
@@ -113,3 +142,31 @@ def ssh_run(
             raise RuntimeError(f"ssh {instance_id} failed: {msg}")
         return ""
     return proc.stdout.strip()
+
+
+def wait_for_ssh(
+    instance_id: int,
+    *,
+    attempts: int | None = None,
+    delay_sec: float | None = None,
+) -> None:
+    """Retry SSH until auth/connect succeeds (Vast keys can lag after attach)."""
+    tries = attempts if attempts is not None else SSH_WAIT_ATTEMPTS
+    delay = delay_sec if delay_sec is not None else SSH_WAIT_DELAY_SEC
+    last_err = ""
+    for attempt in range(1, tries + 1):
+        try:
+            out = ssh_run(instance_id, "echo ok", check=True, timeout=30)
+            if out.strip() == "ok":
+                if attempt > 1:
+                    print(f"  SSH ready on instance {instance_id} (attempt {attempt})")
+                return
+            last_err = f"unexpected echo output: {out!r}"
+        except RuntimeError as exc:
+            last_err = str(exc)
+            if not is_ssh_retryable(last_err):
+                raise
+            invalidate_ssh_url(instance_id)
+            if attempt < tries:
+                time.sleep(delay)
+    raise RuntimeError(f"ssh {instance_id} not ready after {tries} attempts: {last_err}")

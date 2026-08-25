@@ -109,5 +109,11 @@ def attach_instance_ssh(instance_id: int) -> None:
     pub = local_ssh_pubkey()
     if pub is None:
         raise RuntimeError("No local SSH pubkey to attach")
+    pub_text = pub.read_text().strip()
     print(f"Attach SSH key {pub} -> instance {instance_id}")
-    vastai("attach", "ssh", str(instance_id), str(pub), check=False)
+    result = vastai("attach", "ssh", str(instance_id), pub_text, check=False)
+    if isinstance(result, dict) and result.get("success") is False:
+        msg = result.get("msg") or result.get("message") or str(result)
+        lowered = str(msg).lower()
+        if "already" not in lowered:
+            raise RuntimeError(f"attach ssh {instance_id} failed: {msg}")

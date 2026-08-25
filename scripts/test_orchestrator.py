@@ -18,7 +18,7 @@ from lib.matrix_poll import (
     status_is_blank,
 )
 from lib.pull_results import sku_has_results
-from lib.ssh_remote import parse_ssh_url
+from lib.ssh_remote import is_ssh_retryable, parse_ssh_url
 from lib.vast import vast_cli_error
 
 
@@ -54,6 +54,54 @@ class SshUrlTests(unittest.TestCase):
     def test_rejects_http(self) -> None:
         with self.assertRaises(ValueError):
             parse_ssh_url("https://example.com")
+
+
+class SshRetryTests(unittest.TestCase):
+    def test_retryable_auth_errors(self) -> None:
+        self.assertTrue(is_ssh_retryable("root@host: Permission denied (publickey)."))
+        self.assertTrue(is_ssh_retryable("ssh 48627407 failed: ssh exit 255"))
+        self.assertTrue(is_ssh_retryable("Connection refused"))
+
+    def test_non_retryable(self) -> None:
+        self.assertFalse(is_ssh_retryable("bash: onstart.sh: No such file or directory"))
+
+
+class StartMatrixScriptTests(unittest.TestCase):
+    def test_foreground_start_no_background_chmod(self) -> None:
+        script = (Path(__file__).resolve().parent / "remote" / "start_matrix.sh").read_text()
+        self.assertIn("nohup bash --noprofile --norc", script)
+        self.assertIn("kill -0", script)
+        self.assertNotIn("setsid", script)
+        self.assertNotIn("bash -lc", script)
+        # chmod/mkdir must not be backgrounded (no "&" on those lines)
+        for line in script.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("chmod") or stripped.startswith("mkdir"):
+                self.assertNotIn("&", stripped)
+
+
+class HarnessPresentTests(unittest.TestCase):
+    def test_ssh_harness_cmd_checks_pid_and_progress(self) -> None:
+        from unittest.mock import patch
+
+        from lib.matrix_poll import (
+            DONE_PATH,
+            HARNESS_PID_PATH,
+            PROGRESS_PATH,
+            harness_present,
+        )
+
+        with (
+            patch("lib.matrix_poll.use_onstart_transport", return_value=False),
+            patch("lib.ssh_remote.ssh_run", return_value="no") as mock_ssh,
+        ):
+            self.assertFalse(harness_present(1))
+            mock_ssh.assert_called_once()
+            cmd = mock_ssh.call_args[0][1]
+            self.assertIn(DONE_PATH, cmd)
+            self.assertIn(PROGRESS_PATH, cmd)
+            self.assertIn(HARNESS_PID_PATH, cmd)
+            self.assertIn("kill -0", cmd)
 
 
 class ProgressLineTests(unittest.TestCase):

@@ -186,7 +186,9 @@ If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 | `401 Unauthorized` | Re-run `vastai set api-key` |
 | `Insufficient credits` | Top up billing |
 | Repeated `loading` during wait | Normal image pull / container start — watch `status_msg` and elapsed time in wait log; timeout is `WAIT_TIMEOUT_SEC` (25 min) then backup offer |
-| Repeated `waiting` then abort `no_progress` | Clone/bootstrap failed — check `vastai logs`, confirm `BAKEOFF_GIT_URL` is public and `BAKEOFF_GIT_REF` exists |
+| Repeated `waiting` then abort `no_progress` (SSH) | Harness never wrote `PROGRESS.json` — check `results/{sku}/run.log` locally; re-run reuses instance if pid/progress exists. Common causes: SSH auth lag (orchestrator retries ~80s), or old `setsid nohup … &` start killing the job. Fix: `start_matrix.sh` runs in foreground and verifies pid. |
+| Repeated `waiting` then abort `no_progress` (onstart) | Clone/bootstrap failed — check `vastai logs`, confirm `BAKEOFF_GIT_URL` is public and `BAKEOFF_GIT_REF` exists |
+| `Permission denied (publickey)` right after `running` | Normal for a few seconds after `attach ssh` — orchestrator retries with `IdentitiesOnly=yes`. Manual: wait 30–60s, or `vastai attach ssh <id> "$(cat ~/.ssh/id_ed25519.pub)"` |
 | Same `install pip_*` line with `(unchanged Nm)` | Normal during long pip — read the `hint:` line or `vastai logs --tail 80` |
 | Stuck on `install install_stack` (old harness) | Push latest `main` — expect sub-steps `pip_comfyui`, `pip_vllm`, etc. |
 | `install skip_vllm_arm64` on Spark | Expected — vLLM has no reliable aarch64 wheel; Qwen LLM jobs stub |

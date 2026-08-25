@@ -11,10 +11,12 @@ from pathlib import Path
 
 from lib.hf_results import pull_sku_from_hf, sku_matrix_path, verify_sku_matrix
 from lib.ssh_preflight import attach_instance_ssh
+from lib.ssh_remote import ssh_run, wait_for_ssh
 from lib.transport import use_onstart_transport
 from lib.vast import ROOT, vastai_copy
 
 RESULTS = ROOT / "results"
+RUN_LOG_REMOTE = "/workspace/bakeoff/run.log"
 
 
 def pull_remote(instance_id: int, remote: str, local: Path, *, is_dir: bool) -> None:
@@ -83,10 +85,43 @@ def pull_sku(instance_id: int, sku_id: str) -> None:
 
     sku_dir = RESULTS / sku_id
     attach_instance_ssh(instance_id)
+    wait_for_ssh(instance_id)
     pull_remote(instance_id, "/workspace/bakeoff/results/", sku_dir, is_dir=True)
     pull_remote(instance_id, "/workspace/bakeoff/artifacts/", sku_dir / "artifacts", is_dir=True)
-    pull_remote(instance_id, "/workspace/bakeoff/run.log", sku_dir / "run.log", is_dir=False)
+    pull_remote(instance_id, RUN_LOG_REMOTE, sku_dir / "run.log", is_dir=False)
     verify_sku_matrix(RESULTS, sku_id)
+
+
+def pull_run_log_best_effort(instance_id: int, sku_id: str) -> None:
+    """Pull run.log for debugging when matrix did not finish."""
+    if use_onstart_transport():
+        return
+    try:
+        attach_instance_ssh(instance_id)
+        wait_for_ssh(instance_id)
+        pull_remote(instance_id, RUN_LOG_REMOTE, RESULTS / sku_id / "run.log", is_dir=False)
+    except Exception as exc:
+        print(f"  {sku_id}: could not pull run.log: {exc}")
+
+
+def dump_ssh_diagnostics(instance_id: int) -> None:
+    """Print remote ls/ps/run.log when matrix fails to start or finish."""
+    if use_onstart_transport():
+        return
+    probes = [
+        ("ls", "ls -la /workspace/bakeoff /workspace/bakeoff/results 2>&1 | head -n 30"),
+        ("ps", "ps aux | grep -E 'onstart|run_matrix|python3' | grep -v grep || echo no-procs"),
+        ("run.log", f"tail -n 40 {RUN_LOG_REMOTE} 2>&1 || echo no-runlog"),
+    ]
+    for label, cmd in probes:
+        try:
+            out = ssh_run(instance_id, cmd, check=False, timeout=45)
+            snippet = out.strip().replace("\n", " | ")
+            if len(snippet) > 400:
+                snippet = snippet[:397] + "..."
+            print(f"  diag {label}: {snippet or '(empty)'}")
+        except Exception as exc:
+            print(f"  diag {label}: {exc}")
 
 
 def live_pull_sku(instance_id: int, sku_id: str) -> None:
