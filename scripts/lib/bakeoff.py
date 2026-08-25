@@ -19,7 +19,7 @@ from lib.push_and_run import push_and_run
 from lib.sku_blocks import count_runnable_skus, iter_runnable_skus
 from lib.ssh_preflight import ensure_ssh_ready
 from lib.transport import get_transport, use_onstart_transport
-from lib.vast import ROOT, read_yaml, save_instances, vastai
+from lib.vast import ROOT, account_credit, read_yaml, save_instances
 from lib.wait_running import wait_until_running
 
 OFFERS_PATH = ROOT / "config" / "offers.yaml"
@@ -45,8 +45,7 @@ def format_sku_banner(
 def spend_check(offers: dict[str, Any]) -> None:
     max_usd = float(os.environ.get("MAX_USD", "180"))
     min_credit = float(os.environ.get("MIN_CREDIT_USD", "50"))
-    user = vastai("show", "user")
-    credit = float(user.get("credit") or user.get("balance") or 0)
+    credit = account_credit()
     if credit <= 0:
         raise SystemExit(
             f"Insufficient credit (${credit:.2f}). "

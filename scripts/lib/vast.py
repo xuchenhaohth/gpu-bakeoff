@@ -138,6 +138,13 @@ def vastai(*args: str, check: bool = True) -> Any:
     return parsed
 
 
+def account_credit() -> float:
+    user = vastai("show", "user")
+    if not isinstance(user, dict):
+        return 0.0
+    return float(user.get("credit") or user.get("balance") or 0)
+
+
 def vastai_copy(src: str, dst: str, check: bool = True) -> None:
     args: list[str] = ["copy", src, dst]
     identity = local_ssh_identity()

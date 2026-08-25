@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from lib.vast import ROOT, load_instances, read_yaml, save_instances, vastai
+from lib.vast import ROOT, account_credit, load_instances, read_yaml, save_instances, vastai
 
 
 def destroy_instance(rec: dict[str, Any], sku_id: str = "") -> None:
@@ -37,4 +37,9 @@ def destroy_all_leftovers() -> int:
         f"Destroyed leftover instances ({len(instances)} in json, "
         f"{api_destroyed} from API scan) — billing stopped"
     )
+    try:
+        credit = account_credit()
+        print(f"Credit: ${credit:.2f}")
+    except RuntimeError as exc:
+        print(f"Warning: could not fetch account credit: {exc}")
     return 0
