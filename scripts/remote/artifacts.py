@@ -43,12 +43,20 @@ def copy_comfy_output(comfy_rel: str, model_key: str, prompt_id: str) -> str:
     return repo_relative(dest)
 
 
-def write_transcript(model_key: str, prompt_id: str, content: str | None, note: str | None = None) -> str:
-    """Write LLM response or stub note to artifacts/{model}/{prompt_id}.txt."""
+def write_transcript(
+    model_key: str,
+    prompt_id: str,
+    content: str | None,
+    note: str | None = None,
+    *,
+    error: bool = False,
+) -> str:
+    """Write LLM response or failure note to artifacts/{model}/{prompt_id}.txt."""
     dest = _artifact_dest(model_key, prompt_id, ".txt")
     text = (content or "").strip()
     if not text and note:
-        text = f"[stub] {note}"
+        tag = "[error]" if error else "[stub]"
+        text = f"{tag} {note}"
     if not text:
         text = "[no output]"
     dest.write_text(text + "\n", encoding="utf-8")

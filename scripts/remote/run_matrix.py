@@ -177,6 +177,7 @@ def attach_llm_transcript(row: dict[str, Any], metrics: dict[str, Any]) -> None:
         prompt_id,
         metrics.get("content"),
         metrics.get("note"),
+        error=bool(metrics.get("error")),
     )
 
 
@@ -217,21 +218,22 @@ def llm_model_id(spec: dict) -> str:
     return layer_cfg.get("checkpoint") or spec.get("hf_id", "")
 
 
-def resolve_gguf_path(spec: dict) -> str | None:
+def resolve_gguf_path(spec: dict) -> tuple[str | None, str | None]:
     file_hint = spec.get("layer_a", {}).get("file_hint")
     hf_id = spec.get("hf_id")
     if not file_hint or not hf_id:
-        return None
+        return None, "GGUF resolve: missing file_hint or hf_id"
     try:
         from huggingface_hub import hf_hub_download
 
-        return hf_hub_download(
+        path = hf_hub_download(
             repo_id=hf_id,
             filename=file_hint,
             token=hf_token(),
         )
-    except Exception:
-        return None
+        return path, None
+    except Exception as exc:
+        return None, f"GGUF resolve failed for {hf_id}/{file_hint}: {exc}"
 
 
 def run_image_matrix(
@@ -377,7 +379,10 @@ def run_llm_matrix(
     unified = sku_meta(matrix).get("memory_type") == "unified"
     runtime = spec.get("runtime", "vllm")
     model_id = llm_model_id(spec)
-    gguf = resolve_gguf_path(spec) if runtime == "llama_cpp" else None
+    gguf: str | None = None
+    gguf_resolve_error: str | None = None
+    if runtime == "llama_cpp":
+        gguf, gguf_resolve_error = resolve_gguf_path(spec)
     ngpus = gpu_count(matrix)
     extra = llm_extra_args(runtime, ngpus)
     llama_extra = list(extra.get("llama") or [])
@@ -391,6 +396,17 @@ def run_llm_matrix(
             continue
         prompt_id = lp.get("id", key)
         tracker.start(model_key, prompt_id, "run")
+        if gguf_resolve_error:
+            r = row_base(model_key, prompt_id, precision, runtime)
+            r["pass"] = False
+            r["fit_status"] = "No"
+            r["error"] = gguf_resolve_error
+            r["note"] = gguf_resolve_error
+            r["transcript_path"] = write_transcript(
+                model_key, prompt_id, None, gguf_resolve_error, error=True
+            )
+            write_row(writer, csv_file, tracker, r)
+            continue
         system = lp.get("system", "")
         user = llm_user_text(lp)
         max_tok = lp.get("output_tokens", 128)

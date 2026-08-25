@@ -71,6 +71,25 @@ sys.exit(1)
 PY
 }
 
+needs_vllm() {
+  python3 - <<'PY'
+import os, sys, yaml
+from pathlib import Path
+from model_spec import model_selected, resolve_model_spec
+
+root = Path(os.environ.get("BAKEOFF_ROOT", "."))
+cfg = yaml.safe_load((root / "config" / "models.yaml").read_text())
+sku = os.environ.get("BAKEOFF_SKU", "unknown")
+for key, spec in cfg.get("models", {}).items():
+    if not model_selected(key):
+        continue
+    resolved = resolve_model_spec(spec, sku)
+    if resolved.get("runtime") == "vllm":
+        sys.exit(0)
+sys.exit(1)
+PY
+}
+
 install_llama_server() {
   if llama_server_bin >/dev/null 2>&1; then
     echo "llama-server already installed: $(llama_server_bin)"
@@ -110,8 +129,18 @@ EOF
     if git clone https://github.com/ggerganov/llama.cpp.git "$build_dir/llama.cpp"; then
       (
         cd "$build_dir/llama.cpp"
-        git fetch --depth 1 origin "$LLAMA_CPP_GIT_REF" 2>/dev/null || true
-        git checkout "$LLAMA_CPP_GIT_REF" 2>/dev/null || true
+        default_head="$(git rev-parse HEAD)"
+        if ! git fetch --depth 1 origin "$LLAMA_CPP_GIT_REF" 2>/dev/null; then
+          git fetch --depth 1 origin "tag/$LLAMA_CPP_GIT_REF" 2>/dev/null || true
+        fi
+        if ! git checkout "$LLAMA_CPP_GIT_REF" 2>/dev/null; then
+          echo "ERROR: could not checkout llama.cpp ref ${LLAMA_CPP_GIT_REF}" >&2
+          exit 1
+        fi
+        if [[ "$(git rev-parse HEAD)" == "$default_head" ]] && [[ "$LLAMA_CPP_GIT_REF" != "$default_head" ]]; then
+          echo "ERROR: llama.cpp checkout did not change HEAD (ref ${LLAMA_CPP_GIT_REF} invalid?)" >&2
+          exit 1
+        fi
         if command -v cmake >/dev/null 2>&1; then
           cmake -B build -DGGML_CUDA=ON -DLLAMA_CURL=OFF
           cmake --build build --config Release -j "$(nproc 2>/dev/null || echo 4)"
@@ -207,10 +236,18 @@ elif command -v vllm >/dev/null 2>&1; then
   echo "vllm already installed"
 else
   progress pip_vllm
+  vllm_ok=0
   if command -v timeout >/dev/null 2>&1; then
-    timeout "$VLLM_TIMEOUT" uv pip install vllm || echo "WARN: vllm install failed — LLM jobs may fail"
+    timeout "$VLLM_TIMEOUT" uv pip install vllm && vllm_ok=1 || true
   else
-    uv pip install vllm || echo "WARN: vllm install failed — LLM jobs may fail"
+    uv pip install vllm && vllm_ok=1 || true
+  fi
+  if needs_vllm && [[ "$vllm_ok" -ne 1 ]] && ! command -v vllm >/dev/null 2>&1; then
+    echo "ERROR: vllm required for scheduled vLLM models but install failed" >&2
+    exit 1
+  fi
+  if [[ "$vllm_ok" -ne 1 ]]; then
+    echo "WARN: vllm install failed — LLM jobs may fail"
   fi
 fi
 

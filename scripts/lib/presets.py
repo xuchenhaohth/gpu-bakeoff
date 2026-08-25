@@ -12,6 +12,7 @@ PRESETS: dict[str, dict[str, Any]] = {
             "MAX_USD": "25",
             "MATRIX_TIMEOUT_SEC": "7200",
             "BAKEOFF_SKIP_COMFY": "1",
+            "INSTALL_LLAMA_TIMEOUT_SEC": "1800",
         },
         "only_sku": ("dgx_spark_gb10", "rtx5090_1x"),
         "only_model": ("qwen38_27b",),

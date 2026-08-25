@@ -189,6 +189,23 @@ If `01_search_offers.py` finds zero GB10 offers after the ARM fallback:
 
 Narrow run: two SKUs, one model, two LLM jobs (~minutes of matrix time after install).
 
+**Before billing** (free, local):
+
+```bash
+./scripts/preflight_smoke.sh   # credit, offers, Qwen GGUF on HF, git push (onstart), stale instances
+./scripts/check.sh
+```
+
+**Cheapest staged order** (half the smoke cost if Spark is riskier):
+
+```bash
+uv run python scripts/01_search_offers.py
+uv run python scripts/02_run_bakeoff.py --preset qwen-spark-5090 --only-sku rtx5090_1x
+uv run python scripts/02_run_bakeoff.py --preset qwen-spark-5090 --only-sku dgx_spark_gb10 --force-sku dgx_spark_gb10
+```
+
+Full smoke:
+
 ```bash
 ./scripts/smoke_qwen.sh
 ```
@@ -202,12 +219,16 @@ uv run python scripts/02_run_bakeoff.py --preset qwen-spark-5090
 
 For custom SKU/model scope, use `--only-sku`, `--only-model`, and `--force-sku` on `02_run_bakeoff.py` (see [README.md](../README.md)).
 
-- Spark: `qwen38_27b` via `sku_layers` GGUF (`bowmanslayer/Qwen3.8-27B-GGUF`) + `llama-server` (built on aarch64 if needed).
+- Spark: `qwen38_27b` via `sku_layers` GGUF (`bowmanslayer/Qwen3.8-27B-GGUF`) + `llama-server` (built on aarch64 if needed; first run may take 30–60 min install).
 - 5090: vLLM + `RadixArk/Qwen3.8-27B-NVFP4`.
 - Poll should show `matrix 1/2` and `2/2`, not `1/14`.
 - Logs: `results/{sku}/run.log`, `llama.log` / `vllm.log` on the VM (pulled with results when present).
-- **Evidence gate:** a SKU run succeeds only when `matrix.csv` has at least one Layer A row with real `fit_status` (not `Stub`). Stub-only CSVs keep the instance for retry; `docs/FIT_MATRIX.md` maps `Stub` to `—`.
-- **Onstart parity:** Docker `-e` passes `BAKEOFF_MODELS`, `BAKEOFF_SKIP_COMFY`, and `BAKEOFF_FORCE_RESTART`; bootstrap writes `.env.sku` on boot. Onstart clones **public** git only — private forks need SSH push or a tokenized `BAKEOFF_GIT_URL`.
+- **Preset overrides `.env`:** when `--preset` is set, preset `env` keys overwrite `.env` for that run (`MIN_CREDIT_USD`, `MAX_USD`, `MATRIX_TIMEOUT_SEC`, `INSTALL_LLAMA_TIMEOUT_SEC`, etc.).
+- **Success vs presence:** `has_evidence()` (boss/merge) includes `fit_status=No` rows. The orchestrator destroy gate uses `verify_sku_success()` — true only when at least one Layer A row has `fit_status` in `Native` / `Quantized` / `Slow` / `Offload` **and** `decode_tps > 0` on an LLM row. Stub-only or all-`No` CSVs keep the instance for retry; `docs/FIT_MATRIX.md` maps `Stub` to `—`.
+- **Onstart parity:** Docker `-e` passes `BAKEOFF_MODELS`, `BAKEOFF_SKIP_COMFY`, and `BAKEOFF_FORCE_RESTART`; bootstrap writes `.env.sku` on boot. Onstart clones **public** git only — push local commits before smoke (`preflight_smoke.sh` warns if `origin/main` is behind).
+- **Stale results:** delete or ignore old `results/dgx_spark_gb10/` from pre-hardening full-matrix runs before judging a new smoke (`--force-sku`).
+
+**DeepSeek vs Qwen smoke:** qwen-only smoke schedules only `qwen38_27b`. Artifacts like `artifacts/deepseek_v4_flash/llm_short.txt` with `[stub]` or `[error]` come from old full-matrix runs when llama-server was not installed on Spark — not from qwen smoke.
 
 ## Troubleshooting
 

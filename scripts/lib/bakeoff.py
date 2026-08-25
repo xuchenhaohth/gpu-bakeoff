@@ -13,7 +13,7 @@ from lib.instance_lifecycle import (
     reconcile_bakeoff_instances,
     resolve_sku_instance,
 )
-from lib.matrix_evidence import verify_sku_evidence
+from lib.matrix_evidence import sku_failure_reason, verify_sku_success
 from lib.matrix_poll import wait_for_matrix
 from lib.pull_results import (
     dump_ssh_diagnostics,
@@ -103,10 +103,11 @@ def run_one_sku(
         iid = int(rec["instance_id"])
         try:
             pull_sku(iid, sku_id)
-            if not verify_sku_evidence(RESULTS, sku_id):
+            if not verify_sku_success(RESULTS, sku_id):
                 pull_service_logs_best_effort(iid, sku_id)
-                rec["error"] = "stub-only matrix (no real evidence)"
-                print(f"  {sku_id}: stub-only matrix — instance {iid} kept for retry")
+                reason = sku_failure_reason(RESULTS, sku_id)
+                rec["error"] = reason
+                print(f"  {sku_id}: {reason} — instance {iid} kept for retry")
                 return False, rec
             pulled_ok = True
             return True, rec
@@ -142,10 +143,11 @@ def run_one_sku(
         pull_via = "Hugging Face" if use_onstart_transport() else "SSH"
         print(f"  {sku_id}: matrix {status} — pulling results via {pull_via}")
         pull_sku(iid, sku_id)
-        if not verify_sku_evidence(RESULTS, sku_id):
+        if not verify_sku_success(RESULTS, sku_id):
             pull_service_logs_best_effort(iid, sku_id)
-            running["error"] = "stub-only matrix (no real evidence)"
-            print(f"  {sku_id}: stub-only matrix — instance {iid} kept for retry")
+            reason = sku_failure_reason(RESULTS, sku_id)
+            running["error"] = reason
+            print(f"  {sku_id}: {reason} — instance {iid} kept for retry")
             return False, running
         pulled_ok = True
         return True, running

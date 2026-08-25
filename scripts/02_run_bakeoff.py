@@ -67,7 +67,7 @@ def main() -> int:
     if args.preset:
         preset_cfg = apply_preset(args.preset)
         for key, val in preset_cfg.get("env", {}).items():
-            os.environ.setdefault(key, val)
+            os.environ[key] = val
 
     only_skus = list(args.only_sku)
     only_models = list(args.only_model)

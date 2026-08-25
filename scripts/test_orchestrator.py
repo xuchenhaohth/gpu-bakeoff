@@ -290,10 +290,14 @@ class ArtifactTests(unittest.TestCase):
             sku_dir = root / "rtx5090_1x"
             sku_dir.mkdir()
             csv_path = sku_dir / "matrix.csv"
+            import lib.pull_results as pr  # noqa: PLC0415
+
+            pr.RESULTS = root
+
             with csv_path.open("w", newline="") as f:
                 w = csv.DictWriter(
                     f,
-                    fieldnames=["layer", "fit_status", "sku", "model"],
+                    fieldnames=["layer", "fit_status", "sku", "model", "runtime", "decode_tps"],
                 )
                 w.writeheader()
                 w.writerow(
@@ -302,17 +306,34 @@ class ArtifactTests(unittest.TestCase):
                         "fit_status": "Stub",
                         "sku": "rtx5090_1x",
                         "model": "qwen38_27b",
+                        "runtime": "vllm",
+                        "decode_tps": "0",
                     }
                 )
-            import lib.pull_results as pr  # noqa: PLC0415
-
-            pr.RESULTS = root
             self.assertFalse(sku_has_results("rtx5090_1x"))
 
             with csv_path.open("w", newline="") as f:
                 w = csv.DictWriter(
                     f,
-                    fieldnames=["layer", "fit_status", "sku", "model"],
+                    fieldnames=["layer", "fit_status", "sku", "model", "runtime", "decode_tps"],
+                )
+                w.writeheader()
+                w.writerow(
+                    {
+                        "layer": "A",
+                        "fit_status": "No",
+                        "sku": "rtx5090_1x",
+                        "model": "qwen38_27b",
+                        "runtime": "vllm",
+                        "decode_tps": "0",
+                    }
+                )
+            self.assertFalse(sku_has_results("rtx5090_1x"))
+
+            with csv_path.open("w", newline="") as f:
+                w = csv.DictWriter(
+                    f,
+                    fieldnames=["layer", "fit_status", "sku", "model", "runtime", "decode_tps"],
                 )
                 w.writeheader()
                 w.writerow(
@@ -321,6 +342,8 @@ class ArtifactTests(unittest.TestCase):
                         "fit_status": "Native",
                         "sku": "rtx5090_1x",
                         "model": "qwen38_27b",
+                        "runtime": "vllm",
+                        "decode_tps": "12.5",
                     }
                 )
             self.assertTrue(sku_has_results("rtx5090_1x"))
@@ -460,6 +483,23 @@ class ModelSpecTests(unittest.TestCase):
         del os.environ["BAKEOFF_MODELS"]
 
 
+class PresetEnvTests(unittest.TestCase):
+    def test_preset_overwrites_env(self) -> None:
+        import os
+
+        from lib.presets import apply_preset
+
+        os.environ["MIN_CREDIT_USD"] = "50"
+        os.environ["MATRIX_TIMEOUT_SEC"] = "28800"
+        preset = apply_preset("qwen-spark-5090")
+        for key, val in preset.get("env", {}).items():
+            os.environ[key] = val
+        self.assertEqual(os.environ["MIN_CREDIT_USD"], "15")
+        self.assertEqual(os.environ["MATRIX_TIMEOUT_SEC"], "7200")
+        self.assertEqual(os.environ.get("INSTALL_LLAMA_TIMEOUT_SEC"), "1800")
+        self.assertIn("qwen38_27b", preset["only_model"])
+
+
 class MatrixEvidenceTests(unittest.TestCase):
     def test_has_evidence_and_stub_only(self) -> None:
         from lib.matrix_evidence import has_evidence, is_stub_only, read_matrix_rows
@@ -482,6 +522,54 @@ class MatrixEvidenceTests(unittest.TestCase):
             rows = read_matrix_rows(path)
             self.assertTrue(has_evidence(rows))
             self.assertFalse(is_stub_only(rows))
+
+    def test_success_vs_no_rows(self) -> None:
+        from lib.matrix_evidence import (
+            has_evidence,
+            has_success_evidence,
+            read_matrix_rows,
+            verify_sku_success,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sku_dir = root / "rtx5090_1x"
+            sku_dir.mkdir()
+            path = sku_dir / "matrix.csv"
+            with path.open("w", newline="") as f:
+                w = csv.DictWriter(
+                    f,
+                    fieldnames=["layer", "fit_status", "runtime", "decode_tps"],
+                )
+                w.writeheader()
+                w.writerow(
+                    {
+                        "layer": "A",
+                        "fit_status": "No",
+                        "runtime": "vllm",
+                        "decode_tps": "0",
+                    }
+                )
+            rows = read_matrix_rows(path)
+            self.assertTrue(has_evidence(rows))
+            self.assertFalse(has_success_evidence(rows))
+            self.assertFalse(verify_sku_success(root, "rtx5090_1x"))
+
+            with path.open("w", newline="") as f:
+                w = csv.DictWriter(
+                    f,
+                    fieldnames=["layer", "fit_status", "runtime", "decode_tps"],
+                )
+                w.writeheader()
+                w.writerow(
+                    {
+                        "layer": "A",
+                        "fit_status": "Native",
+                        "runtime": "vllm",
+                        "decode_tps": "8.2",
+                    }
+                )
+            self.assertTrue(verify_sku_success(root, "rtx5090_1x"))
 
 
 class ComfyFailFastTests(unittest.TestCase):
@@ -536,7 +624,7 @@ class ResumeMatrixTests(unittest.TestCase):
             patch("lib.bakeoff.use_onstart_transport", return_value=False),
             patch("lib.bakeoff.wait_for_matrix", return_value="done"),
             patch("lib.bakeoff.pull_sku"),
-            patch("lib.bakeoff.verify_sku_evidence", return_value=True),
+            patch("lib.bakeoff.verify_sku_success", return_value=True),
             patch("lib.bakeoff.destroy_instance") as destroy,
             patch("lib.bakeoff.push_and_run") as push,
         ):
@@ -565,7 +653,8 @@ class ResumeMatrixTests(unittest.TestCase):
             patch("lib.bakeoff.push_and_run"),
             patch("lib.bakeoff.wait_for_matrix", return_value="done"),
             patch("lib.bakeoff.pull_sku"),
-            patch("lib.bakeoff.verify_sku_evidence", return_value=False),
+            patch("lib.bakeoff.verify_sku_success", return_value=False),
+            patch("lib.bakeoff.sku_failure_reason", return_value="all jobs failed (fit_status=No)"),
             patch("lib.bakeoff.pull_service_logs_best_effort"),
             patch("lib.bakeoff.destroy_instance") as destroy,
         ):
@@ -577,7 +666,7 @@ class ResumeMatrixTests(unittest.TestCase):
                 mode="push_and_run",
             )
         self.assertFalse(ok)
-        self.assertIn("stub-only", out.get("error", ""))
+        self.assertIn("failed", out.get("error", ""))
         destroy.assert_not_called()
 
 

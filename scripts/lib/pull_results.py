@@ -10,7 +10,7 @@ from glob import glob
 from pathlib import Path
 
 from lib.hf_results import pull_sku_from_hf, sku_matrix_path, verify_sku_matrix
-from lib.matrix_evidence import has_evidence, read_matrix_rows
+from lib.matrix_evidence import has_success_evidence, read_matrix_rows
 from lib.ssh_preflight import attach_instance_ssh
 from lib.ssh_remote import (
     HARNESS_ROOT,
@@ -42,7 +42,7 @@ def pull_remote_ssh(
 
 def sku_has_results(sku_id: str) -> bool:
     path = sku_matrix_path(RESULTS, sku_id)
-    return path.is_file() and has_evidence(read_matrix_rows(path))
+    return path.is_file() and has_success_evidence(read_matrix_rows(path))
 
 
 def refresh_merged_report(update_docs: bool = False) -> bool:
