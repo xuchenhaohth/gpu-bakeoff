@@ -12,6 +12,7 @@ REPO_ROOT = REMOTE_ROOT.parents[1]
 sys.path.insert(0, str(REMOTE_ROOT))
 
 import yaml  # noqa: E402
+from hf_auth import hf_token  # noqa: E402
 from progress import write_progress  # noqa: E402
 
 
@@ -40,7 +41,7 @@ def main() -> int:
         print("Install huggingface_hub")
         return 1
 
-    token = os.environ.get("HF_TOKEN")
+    token = hf_token()
     models = yaml.safe_load(config_path().read_text()).get("models", {})
     cache_dir = os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface"))
     targets = prefetch_targets(models)

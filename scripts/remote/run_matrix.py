@@ -16,6 +16,7 @@ from typing import Any, TextIO
 
 from artifacts import copy_comfy_output, write_transcript
 from comfy_client import run_image_job, run_video_job
+from hf_auth import hf_token
 from llm_client import llm_extra_args, run_llm_job
 from paths import ARTIFACTS_DIR, REMOTE_ROOT, RESULTS_DIR, load_config, resolve_asset
 from progress import JOB_TOTAL, format_last_result, write_progress
@@ -223,7 +224,7 @@ def resolve_gguf_path(spec: dict) -> str | None:
         return hf_hub_download(
             repo_id=hf_id,
             filename=file_hint,
-            token=os.environ.get("HF_TOKEN"),
+            token=hf_token(),
         )
     except Exception:
         return None

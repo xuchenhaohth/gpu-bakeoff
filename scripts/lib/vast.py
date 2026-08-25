@@ -62,7 +62,20 @@ def load_dotenv() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, _, v = line.partition("=")
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        key = k.strip()
+        val = v.strip().strip('"').strip("'")
+        if not val and key in os.environ:
+            continue
+        os.environ.setdefault(key, val)
+
+
+def hf_token() -> str | None:
+    """Return stripped Hugging Face token from env, or None if unset."""
+    for key in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+        tok = os.environ.get(key, "").strip()
+        if tok:
+            return tok
+    return None
 
 
 def _vastai_cmd(*args: str, raw: bool = True) -> list[str]:

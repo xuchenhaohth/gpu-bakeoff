@@ -9,7 +9,7 @@ from typing import Any
 
 from lib.sku_offers import validate_offer
 from lib.transport import default_git_ref, default_git_url, use_onstart_transport
-from lib.vast import vastai
+from lib.vast import hf_token, vastai
 
 DISK_GB = int(os.environ.get("DISK_GB", "400"))
 DEFAULT_IMAGE = "vastai/pytorch:@vastai-automatic-tag"
@@ -45,7 +45,11 @@ def launch_one(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> 
     label = sku_meta.get("label") or f"bakeoff-{sku_id}"
     image = resolve_image(offer, sku_meta)
 
-    hf = os.environ.get("HF_TOKEN", "")
+    hf = hf_token()
+    if not hf:
+        print(f"  REFUSE launch {sku_id} offer={offer.get('id')}: HF_TOKEN empty in .env")
+        return None
+
     tz = os.environ.get("TZ", "Australia/Melbourne")
     num_gpus = sku_meta.get("num_gpus", 1)
     git_url = default_git_url()
@@ -53,8 +57,8 @@ def launch_one(sku_id: str, offer: dict[str, Any], sku_meta: dict[str, Any]) -> 
     hf_results = os.environ.get("HF_RESULTS_REPO", "").strip()
 
     env_str = (
-        f"-e HF_TOKEN={hf} -e TZ={tz} -e BAKEOFF_SKU={sku_id} "
-        f"-e BAKEOFF_GPU_COUNT={num_gpus} "
+        f"-e HF_TOKEN={hf} -e HUGGING_FACE_HUB_TOKEN={hf} -e TZ={tz} "
+        f"-e BAKEOFF_SKU={sku_id} -e BAKEOFF_GPU_COUNT={num_gpus} "
         f"-e BAKEOFF_GIT_URL={git_url} -e BAKEOFF_GIT_REF={git_ref}"
     )
     if hf_results:

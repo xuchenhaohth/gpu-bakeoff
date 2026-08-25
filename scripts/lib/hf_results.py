@@ -6,6 +6,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from lib.vast import hf_token
+
 DEFAULT_DATASET = "gpu-bakeoff-results"
 
 
@@ -13,7 +15,7 @@ def _results_repo_id(create: bool = False) -> str:
     repo = os.environ.get("HF_RESULTS_REPO", "").strip()
     if repo:
         return repo
-    token = os.environ.get("HF_TOKEN", "").strip()
+    token = hf_token()
     if not token:
         raise RuntimeError("HF_TOKEN required for Hugging Face results dataset")
     from huggingface_hub import HfApi
@@ -53,7 +55,7 @@ def pull_sku_from_hf(sku_id: str, dest_root: Path) -> None:
     from huggingface_hub.utils import RepositoryNotFoundError
 
     repo_id = resolve_hf_results_repo()
-    token = os.environ.get("HF_TOKEN", "").strip() or None
+    token = hf_token()
     sku_dir = dest_root / sku_id
     sku_dir.mkdir(parents=True, exist_ok=True)
 

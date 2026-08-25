@@ -22,10 +22,10 @@ from lib.ssh_remote import (
     HARNESS_ROOT,
     HARNESS_RUN_MATRIX,
     HARNESS_START_SCRIPT,
+    SshNotReadyError,
     is_ssh_auth_denied,
     is_ssh_retryable,
     parse_ssh_url,
-    SshNotReadyError,
 )
 from lib.vast import vast_cli_error
 
@@ -117,6 +117,7 @@ class StartMatrixScriptTests(unittest.TestCase):
         script = (Path(__file__).resolve().parent / "remote" / "start_matrix.sh").read_text()
         self.assertIn("nohup bash --noprofile --norc", script)
         self.assertIn("kill -0", script)
+        self.assertIn("load_hf_env.sh", script)
         self.assertNotIn("setsid", script)
         self.assertNotIn("bash -lc", script)
         # chmod/mkdir must not be backgrounded (no "&" on those lines)
@@ -124,6 +125,57 @@ class StartMatrixScriptTests(unittest.TestCase):
             stripped = line.strip()
             if stripped.startswith("chmod") or stripped.startswith("mkdir"):
                 self.assertNotIn("&", stripped)
+
+
+class HfEnvTests(unittest.TestCase):
+    def test_remote_hf_env_requires_token(self) -> None:
+        from unittest.mock import patch
+
+        from lib.hf_env import remote_hf_env_bytes
+
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(RuntimeError):
+                remote_hf_env_bytes()
+
+    def test_remote_hf_env_contents(self) -> None:
+        from unittest.mock import patch
+
+        from lib.hf_env import remote_hf_env_bytes
+
+        with patch.dict(
+            "os.environ",
+            {"HF_TOKEN": "hf_test", "HF_RESULTS_REPO": "user/gpu-bakeoff-results"},
+            clear=True,
+        ):
+            body = remote_hf_env_bytes().decode()
+        self.assertIn("HF_TOKEN=hf_test", body)
+        self.assertIn("HUGGING_FACE_HUB_TOKEN=hf_test", body)
+        self.assertIn("HF_RESULTS_REPO=user/gpu-bakeoff-results", body)
+
+    def test_remote_hf_auth_login_without_token(self) -> None:
+        import sys
+        from unittest.mock import patch
+
+        remote = Path(__file__).resolve().parent / "remote"
+        sys.path.insert(0, str(remote))
+        try:
+            import hf_auth
+
+            with patch.dict("os.environ", {}, clear=True):
+                self.assertFalse(hf_auth.login())
+        finally:
+            sys.path.remove(str(remote))
+
+
+class PushHarnessTests(unittest.TestCase):
+    def test_push_hf_env_requires_token(self) -> None:
+        from unittest.mock import patch
+
+        from lib.push_and_run import push_hf_env
+
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(RuntimeError):
+                push_hf_env(1)
 
 
 class HarnessPresentTests(unittest.TestCase):

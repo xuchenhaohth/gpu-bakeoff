@@ -3,13 +3,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from lib.hf_env import REMOTE_HF_ENV_NAME, remote_hf_env_bytes
 from lib.ssh_preflight import attach_instance_ssh
 from lib.ssh_remote import (
-    fetch_ssh_url,
     HARNESS_ROOT,
     HARNESS_START_SCRIPT,
+    fetch_ssh_url,
+    ssh_push_bytes,
     ssh_push_dir,
     ssh_run,
     verify_harness,
@@ -19,12 +19,19 @@ from lib.vast import ROOT
 
 REMOTE_DIR = ROOT / "scripts" / "remote"
 CONFIG_DIR = ROOT / "config"
+REMOTE_HF_ENV = f"{HARNESS_ROOT}/{REMOTE_HF_ENV_NAME}"
+
+
+def push_hf_env(instance_id: int) -> None:
+    """Write mode-600 .env.hf on the remote harness root (SSH sessions lack Docker -e)."""
+    ssh_push_bytes(instance_id, REMOTE_HF_ENV, remote_hf_env_bytes())
 
 
 def push_harness(instance_id: int) -> None:
     """Push harness + config into the container (same SSH path as smoke test)."""
     ssh_push_dir(instance_id, REMOTE_DIR, HARNESS_ROOT)
     ssh_push_dir(instance_id, CONFIG_DIR, f"{HARNESS_ROOT}/config")
+    push_hf_env(instance_id)
     verify_harness(instance_id)
 
 

@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -12,7 +11,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from lib.hf_results import pull_sku_from_hf, resolve_hf_results_repo  # noqa: E402
 from lib.pull_results import refresh_merged_report  # noqa: E402
-from lib.vast import load_dotenv  # noqa: E402
+from lib.vast import hf_token, load_dotenv  # noqa: E402
 
 RESULTS = ROOT / "results"
 
@@ -38,7 +37,7 @@ def main() -> int:
     from huggingface_hub import HfApi
 
     repo_id = resolve_hf_results_repo()
-    token = os.environ.get("HF_TOKEN", "").strip() or None
+    token = hf_token()
     api = HfApi(token=token)
     files = api.list_repo_files(repo_id, repo_type="dataset")
     skus = sorted({f.split("/")[0] for f in files if f.endswith("matrix.csv")})

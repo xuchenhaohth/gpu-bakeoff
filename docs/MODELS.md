@@ -14,7 +14,7 @@ Six models, Layer A only (shared quant across SKUs).
 | Qwen NVFP4 | [RadixArk/Qwen3.8-27B-NVFP4](https://huggingface.co/RadixArk/Qwen3.8-27B-NVFP4) | Apache 2.0 | Public |
 | DeepSeek GGUF | [prometheusAIR/DeepSeek-V4-Flash-0731-GGUF](https://huggingface.co/prometheusAIR/DeepSeek-V4-Flash-0731-GGUF) | MIT | Public |
 
-Set `HF_TOKEN` in `.env`. Remote prefetch uses `huggingface-cli login --token $HF_TOKEN`.
+Set `HF_TOKEN` in `.env`. On the VM, `load_hf_env.sh` sources `.env.hf` (SSH push) or Docker `-e`; `onstart.sh` runs `python3 hf_auth.py login` before prefetch.
 
 ## Runtime stack (pinned for reproducibility)
 

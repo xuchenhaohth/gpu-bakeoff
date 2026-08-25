@@ -7,6 +7,9 @@ BAKEOFF_ROOT="$(pwd)"
 mkdir -p results
 python3 progress.py --phase onstart --message bootstrap
 
+# shellcheck disable=SC1091
+source "$BAKEOFF_ROOT/load_hf_env.sh"
+
 echo "== bakeoff onstart =="
 nvidia-smi || { echo "No GPU"; exit 1; }
 
@@ -40,8 +43,7 @@ fi
 
 if [[ -n "${HF_TOKEN:-}" ]]; then
   python3 progress.py --phase onstart --message hf_login
-  huggingface-cli login --token "$HF_TOKEN" --add-to-git-credential 2>/dev/null || \
-    python3 -c "from huggingface_hub import login; login(token='$HF_TOKEN')"
+  python3 hf_auth.py login || { echo "ERROR: huggingface_hub login failed" >&2; exit 1; }
 fi
 
 mkdir -p results artifacts config assets

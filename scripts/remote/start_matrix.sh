@@ -9,6 +9,9 @@ RUN_LOG="$BAKEOFF_ROOT/run.log"
 chmod +x "$BAKEOFF_ROOT/onstart.sh" "$BAKEOFF_ROOT/install_stack.sh"
 mkdir -p "$BAKEOFF_ROOT/results"
 
+# shellcheck disable=SC1091
+source "$BAKEOFF_ROOT/load_hf_env.sh"
+
 if [[ -f "$PID_FILE" ]]; then
   old_pid="$(cat "$PID_FILE")"
   if kill -0 "$old_pid" 2>/dev/null; then

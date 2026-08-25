@@ -36,7 +36,7 @@ All orchestrator scripts read `VAST_API_KEY` from `.env` and pass `--api-key` to
 | | Personal API key | Team API key |
 |---|------------------|--------------|
 | SSH keys | Register at https://cloud.vast.ai/manage-keys/ | **Not supported** |
-| Harness delivery | `vastai copy` + SSH start | Vast `--onstart` clones public git at boot |
+| Harness delivery | `vastai copy` + SSH start; writes `.env.hf` for Hub auth | Vast `--onstart` clones public git at boot |
 | Progress | SSH poll `PROGRESS.json` | `vastai logs` — `[progress]` lines |
 | Results | `vastai copy` pull | VM uploads to Hugging Face; local `snapshot_download` |
 
@@ -89,7 +89,7 @@ Launch flags used:
 - `--disk 400` (`DISK_GB`)
 - `--ssh --direct`
 - `--label bakeoff-<sku>`
-- `--env '-e HF_TOKEN=… -e TZ=… -e BAKEOFF_SKU=<sku> -e BAKEOFF_GIT_URL=… -e BAKEOFF_GIT_REF=…'`
+- `--env '-e HF_TOKEN=… -e HUGGING_FACE_HUB_TOKEN=… -e TZ=… -e BAKEOFF_SKU=<sku> -e BAKEOFF_GIT_URL=… -e BAKEOFF_GIT_REF=…'`
 - Team path: `--onstart scripts/lib/onstart_bootstrap.sh`
 
 Matrix completion: SSH transport reads `/workspace/bakeoff/results/DONE`; onstart transport watches logs for `BAKEOFF_DONE exit=N` after HF upload (`MATRIX_TIMEOUT_SEC`, default 8 h).

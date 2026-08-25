@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 
+from hf_auth import hf_token
+
 REMOTE_ROOT = Path(__file__).resolve().parent
 RESULTS_DIR = REMOTE_ROOT / "results"
 ARTIFACTS_DIR = REMOTE_ROOT / "artifacts"
@@ -38,7 +40,7 @@ def ensure_repo(token: str | None = None) -> str | None:
     global _repo_id
     if _repo_id:
         return _repo_id
-    token = (token or os.environ.get("HF_TOKEN", "")).strip()
+    token = token or hf_token()
     if not token:
         return None
     _repo_id = _results_repo_id(token, create=True)
@@ -71,7 +73,7 @@ def upload_paths(repo_id: str, token: str, sku: str, paths: list[Path], *, label
 
 def upload_job(sku: str, artifact_path: str = "", transcript_path: str = "") -> bool:
     """Upload matrix.csv plus any new artifact files after one matrix job."""
-    token = os.environ.get("HF_TOKEN", "").strip()
+    token = hf_token()
     if not token:
         return False
     repo_id = ensure_repo(token)
@@ -101,7 +103,7 @@ def upload_job(sku: str, artifact_path: str = "", transcript_path: str = "") -> 
 
 def upload_all(sku: str) -> int:
     """Full SKU upload (end-of-run safety net)."""
-    token = os.environ.get("HF_TOKEN", "").strip()
+    token = hf_token()
     if not token:
         print("HF_TOKEN unset — skipping results upload", file=sys.stderr)
         return 1

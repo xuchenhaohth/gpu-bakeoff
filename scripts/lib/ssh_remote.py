@@ -259,6 +259,42 @@ def ssh_push_dir(
         raise RuntimeError(f"ssh push {instance_id} failed: {err_text or f'exit {ssh_proc.returncode}'}")
 
 
+def ssh_push_bytes(
+    instance_id: int,
+    remote_path: str,
+    data: bytes,
+    *,
+    mode: int = 0o600,
+    timeout: int = 60,
+) -> None:
+    """Write bytes to a remote file via SSH stdin (token-safe — not in argv)."""
+    identity, user, host, port = _ssh_connection(instance_id)
+    quoted = shlex.quote(remote_path)
+    remote_cmd = f"cat > {quoted} && chmod {mode:o} {quoted}"
+    ssh_cmd = _ssh_base_cmd(str(identity), user, host, port, remote_cmd)
+
+    print(f"Push (ssh) bytes -> instance {instance_id}:{remote_path}")
+    try:
+        proc = subprocess.run(
+            ssh_cmd,
+            input=data,
+            capture_output=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        invalidate_ssh_url(instance_id)
+        raise RuntimeError(f"ssh push bytes {instance_id} timed out after {timeout}s") from None
+
+    if proc.returncode != 0:
+        invalidate_ssh_url(instance_id)
+        raw = proc.stderr or proc.stdout
+        if isinstance(raw, bytes):
+            err = raw.decode(errors="replace").strip()
+        else:
+            err = (raw or f"exit {proc.returncode}").strip()
+        raise RuntimeError(f"ssh push bytes {instance_id} failed: {err}")
+
+
 def ssh_pull_dir(
     instance_id: int,
     remote_dir: str,
@@ -354,7 +390,11 @@ def ssh_pull_file(
 
     if proc.returncode != 0:
         invalidate_ssh_url(instance_id)
-        err = (proc.stderr or proc.stdout or f"ssh exit {proc.returncode}").strip()
+        err_raw = proc.stderr or proc.stdout
+        if isinstance(err_raw, bytes):
+            err = err_raw.decode(errors="replace").strip()
+        else:
+            err = (err_raw or f"ssh exit {proc.returncode}").strip()
         raise RuntimeError(f"ssh pull file {instance_id} failed: {err}")
 
     if not proc.stdout and required:
